@@ -1,4 +1,7 @@
-# Event Store Benchmark Suite (ESBS)
+[![ESBS Logo](images/banner-v2-1280x640.png)](https://)
+
+
+# Event Store Benchmark Suite
 
 A rigorous, reproducible, open benchmark framework for evaluating event sourcing databases and append-only log systems.
 
