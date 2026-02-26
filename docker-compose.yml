@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  umadb:
+    image: umadb/umadb:latest
+    container_name: umadb
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./data/umadb:/data
+    restart: unless-stopped

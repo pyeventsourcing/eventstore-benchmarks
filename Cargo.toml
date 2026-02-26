@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "rust/bench-core",
+    "rust/adapters/umadb",
+    "rust/cli",
+]
+resolver = "2"

@@ -1,0 +1,146 @@
+use anyhow::Result;
+use bench_core::{run_workload, AdapterFactory, RunOptions, WorkloadFile};
+use bench_core::adapter::ConnectionParams;
+use clap::{Parser, Subcommand};
+use serde_json::json;
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::runtime::Runtime;
+use tracing_subscriber::EnvFilter;
+
+#[derive(Parser, Debug)]
+#[command(name = "esbs", version, about = "Event Store Benchmark Suite CLI")] 
+struct Cli {
+    #[arg(long, default_value = "info")] 
+    log: String,
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Run a workload against a store
+    Run {
+        /// Store adapter name (e.g., umadb)
+        #[arg(long)]
+        store: String,
+        /// Path to workload YAML
+        #[arg(long)]
+        workload: PathBuf,
+        /// Output directory base (raw results will be placed under a timestamped folder)
+        #[arg(long, default_value = "results/raw")] 
+        output: PathBuf,
+        /// Connection URI for the store
+        #[arg(long, default_value = "")] 
+        uri: String,
+        /// Optional key=value options (repeatable)
+        #[arg(long, num_args=0.., value_parser = parse_key_val::<String, String>)]
+        option: Vec<(String, String)>,
+        /// Random seed
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+    },
+    /// List available workloads in the repo
+    ListWorkloads {
+        #[arg(long, default_value = "workloads")] 
+        path: PathBuf,
+    },
+    /// List available store adapters
+    ListStores,
+}
+
+fn parse_key_val<K, V>(s: &str) -> std::result::Result<(K, V), String>
+where
+    K: std::str::FromStr,
+    V: std::str::FromStr,
+{
+    let pos = s.find('=');
+    match pos {
+        Some(pos) => {
+            let key = s[..pos].parse().map_err(|_| format!("invalid key: {}", &s[..pos]))?;
+            let value = s[pos+1..].parse().map_err(|_| format!("invalid value: {}", &s[pos+1..]))?;
+            Ok((key, value))
+        }
+        None => Err(format!("invalid KEY=VALUE: no `=` in `{}`", s)),
+    }
+}
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::new(cli.log))
+        .init();
+
+    match cli.command {
+        Commands::ListStores => {
+            println!("umadb");
+            Ok(())
+        }
+        Commands::ListWorkloads { path } => {
+            for entry in fs::read_dir(path)? {
+                let entry = entry?;
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()) == Some("yaml") {
+                    println!("{}", p.display());
+                }
+            }
+            Ok(())
+        }
+        Commands::Run { store, workload, output, uri, option, seed } => {
+            // Load workload
+            let wl = WorkloadFile::load(&workload)?;
+            fs::create_dir_all(&output)?;
+            let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
+            let run_dir = output.join(ts);
+            fs::create_dir_all(&run_dir)?;
+
+            let conn = ConnectionParams { uri, options: option.into_iter().collect() };
+
+            // Adapter registry (extendable in the future)
+            let adapter_name = store.to_lowercase();
+            let adapter: Arc<dyn bench_core::EventStoreAdapter> = match adapter_name.as_str() {
+                "umadb" => {
+                    let fac = umadb_adapter::UmaDbFactory;
+                    fac.create().into()
+                }
+                other => {
+                    anyhow::bail!("unknown adapter: {}", other)
+                }
+            };
+
+            let rt = Runtime::new()?;
+            let adapter_name_for_run = adapter_name.clone();
+            let result = rt.block_on(async move {
+                run_workload(
+                    adapter,
+                    wl,
+                    RunOptions { adapter_name: adapter_name_for_run, conn, seed },
+                ).await
+            })?;
+
+            // Write JSON summary and samples
+            let summary_path = run_dir.join("summary.json");
+            let samples_path = run_dir.join("samples.jsonl");
+            fs::write(&summary_path, serde_json::to_string_pretty(&result.summary)?)?;
+            // JSON Lines for samples
+            let mut lines = String::new();
+            for s in result.samples {
+                lines.push_str(&serde_json::to_string(&s)?);
+                lines.push('\n');
+            }
+            fs::write(&samples_path, lines)?;
+
+            // Minimal Criterion-compatible marker file (for Python to find runs)
+            let meta_path = run_dir.join("run.meta.json");
+            fs::write(&meta_path, json!({
+                "adapter": adapter_name,
+                "workload": workload.to_string_lossy(),
+            }).to_string())?;
+
+            println!("Run complete. Outputs written to {}", run_dir.display());
+            Ok(())
+        }
+    }
+}

@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "bench-core",
+    "adapters/umadb",
+    "cli",
+]
+resolver = "2"
