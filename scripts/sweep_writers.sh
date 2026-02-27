@@ -2,7 +2,7 @@
 set -euo pipefail
 
 WRITERS=(1 2 4 8 16)
-STORES=("umadb" "kurrentdb")
+STORES=("umadb" "kurrentdb" "axonserver")
 WORKLOAD_TEMPLATE="workloads/concurrent_writers.yaml"
 RAW_DIR="results/raw"
 PUBLISHED_DIR="results/published"

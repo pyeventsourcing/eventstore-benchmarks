@@ -1,0 +1,17 @@
+[package]
+name = "axonserver-adapter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+bench-core = { path = "../../bench-core" }
+axonserver-client = { path = "../../axonserver-client" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+futures = "0.3"
+bench-testcontainers = { path = "../../testcontainers" }
+testcontainers = "0.23"

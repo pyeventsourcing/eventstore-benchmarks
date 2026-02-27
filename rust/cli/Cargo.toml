@@ -18,3 +18,4 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 dummy-adapter = { path = "../adapters/dummy" }
 umadb-adapter = { path = "../adapters/umadb" }
 kurrentdb-adapter = { path = "../adapters/kurrentdb" }
+axonserver-adapter = { path = "../adapters/axonserver" }

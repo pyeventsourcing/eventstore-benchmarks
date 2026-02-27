@@ -71,6 +71,7 @@ fn adapter_factories() -> Vec<Box<dyn AdapterFactory>> {
         Box::new(dummy_adapter::DummyFactory),
         Box::new(umadb_adapter::UmaDbFactory),
         Box::new(kurrentdb_adapter::KurrentDbFactory),
+        Box::new(axonserver_adapter::AxonServerFactory),
     ]
 }
 
@@ -116,6 +117,7 @@ fn main() -> Result<()> {
             let default_uri = match adapter_name.as_str() {
                 "umadb" => "http://localhost:50051".to_string(),
                 "kurrentdb" => "esdb://localhost:2113?tls=false".to_string(),
+                "axonserver" => "http://localhost:8124".to_string(),
                 _ => String::new(),
             };
             let uri = uri.unwrap_or(default_uri);
