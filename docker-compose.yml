@@ -1,12 +1,11 @@
-version: "3.9"
 services:
   umadb:
     image: umadb/umadb:latest
     container_name: umadb
     ports:
       - "50051:50051"
-    volumes:
-      - ./data/umadb:/data
+#    volumes:
+#      - ./data/umadb:/data
     restart: unless-stopped
 
   kurrentdb:
@@ -18,7 +17,6 @@ services:
       - KURRENTDB_INSECURE=true
       - KURRENTDB_RUN_PROJECTIONS=All
       - KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP=true
-      - KURRENTDB_MEM_DB=false
-    volumes:
-      - ./data/kurrentdb:/var/lib/kurrentdb
+#    volumes:
+#      - ./data/kurrentdb:/var/lib/kurrentdb
     restart: unless-stopped
