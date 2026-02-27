@@ -22,3 +22,4 @@ target
 
 # Python virtual environment
 .venv/
+results/
