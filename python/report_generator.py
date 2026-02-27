@@ -1,5 +1,6 @@
 import argparse
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -33,12 +34,11 @@ def load_runs(raw_dir: Path):
 
 
 def plot_latency_cdf(samples: pd.DataFrame, out_path: Path):
-    # Convert microseconds to milliseconds
     lat_ms = samples.loc[samples["ok"], "latency_us"].astype(float) / 1000.0
     lat_ms = lat_ms.clip(lower=1e-3)
     lat_sorted = np.sort(lat_ms.values)
     p = np.linspace(0, 100, len(lat_sorted), endpoint=False)
-    plt.figure(figsize=(6,4))
+    plt.figure(figsize=(6, 4))
     plt.plot(lat_sorted, p, label="append latency CDF")
     plt.xscale("log")
     plt.xlabel("Latency (ms) [log]")
@@ -51,15 +51,13 @@ def plot_latency_cdf(samples: pd.DataFrame, out_path: Path):
 
 
 def plot_throughput(samples: pd.DataFrame, out_path: Path):
-    # Bucket by 100ms and count OK appends per bucket
     t0 = samples["t_ms"].min()
     df = samples.copy()
     df["t_rel_ms"] = df["t_ms"] - t0
     df["bucket"] = (df["t_rel_ms"] // 100).astype(int)
     grp = df.groupby("bucket")["ok"].apply(lambda x: int(x.sum()))
-    # convert to events/sec per 100ms bucket
     eps = grp * 10
-    plt.figure(figsize=(6,4))
+    plt.figure(figsize=(6, 4))
     plt.plot(eps.index.values / 10.0, eps.values)
     plt.xlabel("Time (s)")
     plt.ylabel("Events/sec")
@@ -70,9 +68,10 @@ def plot_throughput(samples: pd.DataFrame, out_path: Path):
     plt.close()
 
 
-def plot_combined_latency_cdf(all_run_data, out_path: Path):
-    plt.figure(figsize=(8,5))
-    for label, samples_df in all_run_data:
+def plot_comparison_latency_cdf(run_data, title, out_path: Path):
+    """Plot latency CDF comparing stores for a specific writer count."""
+    plt.figure(figsize=(8, 5))
+    for label, samples_df in run_data:
         lat_ms = samples_df.loc[samples_df["ok"], "latency_us"].astype(float) / 1000.0
         lat_ms = lat_ms.clip(lower=1e-3)
         lat_sorted = np.sort(lat_ms.values)
@@ -81,7 +80,7 @@ def plot_combined_latency_cdf(all_run_data, out_path: Path):
     plt.xscale("log")
     plt.xlabel("Latency (ms) [log]")
     plt.ylabel("Percentile (%)")
-    plt.title("Latency CDF — All Stores")
+    plt.title(title)
     plt.legend()
     plt.grid(True, which="both", ls=":")
     plt.tight_layout()
@@ -89,9 +88,10 @@ def plot_combined_latency_cdf(all_run_data, out_path: Path):
     plt.close()
 
 
-def plot_combined_throughput(all_run_data, out_path: Path):
-    plt.figure(figsize=(8,5))
-    for label, samples_df in all_run_data:
+def plot_comparison_throughput(run_data, title, out_path: Path):
+    """Plot throughput over time comparing stores for a specific writer count."""
+    plt.figure(figsize=(8, 5))
+    for label, samples_df in run_data:
         t0 = samples_df["t_ms"].min()
         df = samples_df.copy()
         df["t_rel_ms"] = df["t_ms"] - t0
@@ -101,9 +101,64 @@ def plot_combined_throughput(all_run_data, out_path: Path):
         plt.plot(eps.index.values / 10.0, eps.values, label=label)
     plt.xlabel("Time (s)")
     plt.ylabel("Events/sec")
-    plt.title("Throughput over time — All Stores")
+    plt.title(title)
     plt.legend()
     plt.grid(True, ls=":")
+    plt.tight_layout()
+    plt.savefig(out_path)
+    plt.close()
+
+
+def plot_throughput_scaling(runs, out_path: Path):
+    """Plot throughput vs writer count, one line per adapter."""
+    # Group by adapter → list of (writers, throughput)
+    adapter_data = defaultdict(list)
+    for run in runs:
+        s = run["summary"]
+        adapter = s["adapter"]
+        writers = s.get("writers", 1)
+        throughput = s["throughput_eps"]
+        adapter_data[adapter].append((writers, throughput))
+
+    plt.figure(figsize=(8, 5))
+    for adapter, points in sorted(adapter_data.items()):
+        points.sort()
+        ws = [p[0] for p in points]
+        tps = [p[1] for p in points]
+        plt.plot(ws, tps, marker="o", label=adapter)
+    plt.xlabel("Writers")
+    plt.ylabel("Throughput (events/sec)")
+    plt.title("Throughput Scaling by Writer Count")
+    plt.legend()
+    plt.grid(True, ls=":")
+    plt.xticks(sorted({s["summary"].get("writers", 1) for s in runs}))
+    plt.tight_layout()
+    plt.savefig(out_path)
+    plt.close()
+
+
+def plot_p99_scaling(runs, out_path: Path):
+    """Plot p99 latency vs writer count, one line per adapter."""
+    adapter_data = defaultdict(list)
+    for run in runs:
+        s = run["summary"]
+        adapter = s["adapter"]
+        writers = s.get("writers", 1)
+        p99 = s["latency"]["p99_ms"]
+        adapter_data[adapter].append((writers, p99))
+
+    plt.figure(figsize=(8, 5))
+    for adapter, points in sorted(adapter_data.items()):
+        points.sort()
+        ws = [p[0] for p in points]
+        p99s = [p[1] for p in points]
+        plt.plot(ws, p99s, marker="o", label=adapter)
+    plt.xlabel("Writers")
+    plt.ylabel("p99 Latency (ms)")
+    plt.title("p99 Latency Scaling by Writer Count")
+    plt.legend()
+    plt.grid(True, ls=":")
+    plt.xticks(sorted({s["summary"].get("writers", 1) for s in runs}))
     plt.tight_layout()
     plt.savefig(out_path)
     plt.close()
@@ -148,7 +203,8 @@ def generate_html(report_dir: Path, run):
         f.write(html)
 
 
-def generate_consolidated_html(out_base: Path, runs):
+def generate_consolidated_html(out_base: Path, runs, writer_groups):
+    # Summary table
     summary_rows = ""
     for run in runs:
         s = run["summary"]
@@ -163,7 +219,41 @@ def generate_consolidated_html(out_base: Path, runs):
         <td>{writers}</td>
         <td>{s['duration_s']:.1f}s</td>
         <td>{s['throughput_eps']:.0f}</td>
+        <td>{s['latency']['p50_ms']:.2f}</td>
+        <td>{s['latency']['p99_ms']:.2f}</td>
       </tr>"""
+
+    # Per-writer-count comparison sections
+    comparison_sections = ""
+    for wc in sorted(writer_groups.keys()):
+        comparison_sections += f"""
+    <h2>Writers = {wc}</h2>
+    <div class='row'>
+      <div class='card'>
+        <h3>Latency CDF</h3>
+        <img src='comparison_w{wc}_latency_cdf.png' width='560'>
+      </div>
+      <div class='card'>
+        <h3>Throughput over time</h3>
+        <img src='comparison_w{wc}_throughput.png' width='560'>
+      </div>
+    </div>"""
+
+    # Scaling charts (only if multiple writer counts)
+    scaling_section = ""
+    if len(writer_groups) > 1:
+        scaling_section = """
+    <h2>Scaling</h2>
+    <div class='row'>
+      <div class='card'>
+        <h3>Throughput vs Writers</h3>
+        <img src='scaling_throughput.png' width='560'>
+      </div>
+      <div class='card'>
+        <h3>p99 Latency vs Writers</h3>
+        <img src='scaling_p99.png' width='560'>
+      </div>
+    </div>"""
 
     html = f"""
 <!DOCTYPE html>
@@ -173,7 +263,7 @@ def generate_consolidated_html(out_base: Path, runs):
   <title>ESBS Consolidated Report</title>
   <style>
     body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }}
-    h1, h2 {{ margin-top: 1.2rem; }}
+    h1, h2, h3 {{ margin-top: 1.2rem; }}
     table {{ border-collapse: collapse; margin: 1rem 0; }}
     th, td {{ border: 1px solid #ddd; padding: 0.5rem 1rem; text-align: left; }}
     th {{ background: #f5f5f5; }}
@@ -185,20 +275,11 @@ def generate_consolidated_html(out_base: Path, runs):
   <h1>ESBS Consolidated Report</h1>
   <h2>Summary</h2>
   <table>
-    <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th></tr>
+    <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th><th>p50 (ms)</th><th>p99 (ms)</th></tr>
     {summary_rows}
   </table>
-  <h2>Combined Comparison</h2>
-  <div class='row'>
-    <div class='card'>
-      <h2>Latency CDF</h2>
-      <img src='combined_latency_cdf.png' width='560'>
-    </div>
-    <div class='card'>
-      <h2>Throughput over time</h2>
-      <img src='combined_throughput.png' width='560'>
-    </div>
-  </div>
+  {scaling_section}
+  {comparison_sections}
 </body>
 </html>
 """
@@ -222,9 +303,9 @@ def main():
         return
 
     # Generate individual reports for each run
-    all_run_data = []
     for run in runs:
         samples_df = pd.DataFrame(run["samples"])
+        run["_samples_df"] = samples_df
         adapter = run["summary"]["adapter"]
         workload = Path(run["summary"]["workload"]).stem
 
@@ -234,19 +315,47 @@ def main():
         plot_latency_cdf(samples_df, report_dir / "latency_cdf.png")
         plot_throughput(samples_df, report_dir / "throughput.png")
         generate_html(report_dir, run)
-
-        writers = run["summary"].get("writers", "?")
-        label = f"{adapter} / {workload} / w={writers}"
-        all_run_data.append((label, samples_df))
-
         print(f"Report written to {report_dir}/index.html")
 
-    # Generate consolidated comparison plots and report
-    if len(all_run_data) > 1:
-        plot_combined_latency_cdf(all_run_data, out_base / "combined_latency_cdf.png")
-        plot_combined_throughput(all_run_data, out_base / "combined_throughput.png")
+    # Group runs by writer count for per-group comparison charts
+    writer_groups = defaultdict(list)
+    for run in runs:
+        wc = run["summary"].get("writers", 1)
+        adapter = run["summary"]["adapter"]
+        writer_groups[wc].append((adapter, run["_samples_df"]))
 
-    generate_consolidated_html(out_base, runs)
+    # Generate per-writer-count comparison charts
+    for wc, run_data in sorted(writer_groups.items()):
+        if len(run_data) > 1:
+            plot_comparison_latency_cdf(
+                run_data,
+                f"Latency CDF — {wc} writer(s)",
+                out_base / f"comparison_w{wc}_latency_cdf.png",
+            )
+            plot_comparison_throughput(
+                run_data,
+                f"Throughput — {wc} writer(s)",
+                out_base / f"comparison_w{wc}_throughput.png",
+            )
+        elif len(run_data) == 1:
+            # Single store at this writer count — still generate charts for consistency
+            plot_comparison_latency_cdf(
+                run_data,
+                f"Latency CDF — {wc} writer(s)",
+                out_base / f"comparison_w{wc}_latency_cdf.png",
+            )
+            plot_comparison_throughput(
+                run_data,
+                f"Throughput — {wc} writer(s)",
+                out_base / f"comparison_w{wc}_throughput.png",
+            )
+
+    # Generate scaling summary charts (throughput & p99 vs writers)
+    if len(writer_groups) > 1:
+        plot_throughput_scaling(runs, out_base / "scaling_throughput.png")
+        plot_p99_scaling(runs, out_base / "scaling_p99.png")
+
+    generate_consolidated_html(out_base, runs, writer_groups)
     print(f"Consolidated report written to {out_base}/index.html")
 
 
