@@ -313,20 +313,128 @@ This allows the same workload to run across different systems.
 
 # Running Benchmarks
 
+Quick start (UmaDB example):
+
+```bash
+# 1) Start UmaDB via Docker Compose (once)
+docker compose up -d umadb
+
+# 2) Build the CLI
+toolchain: cargo build -p esbs
+
+# 3) Run a sample workload (writes raw results under results/raw/<timestamp>/)
+./target/debug/esbs run \
+  --store umadb \
+  --workload workloads/concurrent_writers.yaml \
+  --uri http://localhost:50051 \
+  --seed 42
+
+# 4) Generate a report (images + HTML)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r python/requirements.txt
+python3 python/report_generator.py --raw results/raw --out results/published
+```
+
+See the full command reference below for more options (TLS, API keys, custom output paths, etc.).
+
+---
+
+# CLI Commands
+
+The benchmark CLI is `esbs`. You can run it from `./target/debug/esbs` after building, or via Cargo:
+
+```bash
+cargo run -p esbs -- <command> [options]
+```
+
+Global options:
+- `--log <level>`: set log verbosity (`trace`, `debug`, `info`, `warn`, `error`). Default: `info`.
+- `-h, --help`: show help
+- `-V, --version`: show version
+
+## esbs run
+Execute a workload against a specific adapter and write raw results to a timestamped folder.
+
+Usage:
+```bash
+esbs run \
+  --store <adapter> \
+  --workload <path/to/workload.yaml> \
+  [--output results/raw] \
+  [--uri <connection-uri>] \
+  [--option key=value ...] \
+  [--seed <u64>]
+```
+
+Parameters:
+- `--store <adapter>`: adapter name. Currently supported: `umadb`.
+- `--workload <file>`: path to a YAML workload definition (see `workloads/`).
+- `--output <dir>`: base directory for raw results. Default: `results/raw`.
+- `--uri <string>`: connection URI for the store (e.g., `http://localhost:50051`).
+- `--option key=value`: repeatable key/value options for the adapter. For UmaDB:
+  - `api_key=umadb:...`
+  - `ca_path=/path/to/server.pem` (TLS with self-signed certs)
+  - `batch_size=1000` (read hint)
+- `--seed <u64>`: deterministic RNG seed. Default: `42`.
+
+Examples:
+```bash
+# Basic UmaDB run (insecure gRPC)
+esbs run --store umadb \
+  --workload workloads/concurrent_writers.yaml \
+  --uri http://localhost:50051 \
+  --seed 42
+
+# UmaDB with TLS and API key
+esbs run --store umadb \
+  --workload workloads/concurrent_writers.yaml \
+  --uri https://localhost:50051 \
+  --option ca_path=server.pem \
+  --option api_key=umadb:example-api-key \
+  --option batch_size=1000
+
+# Custom results location
+esbs run --store umadb \
+  --workload workloads/concurrent_writers.yaml \
+  --uri http://localhost:50051 \
+  --output results/raw/lab-a
+```
+
+Outputs:
+- `summary.json`: overall stats (duration, throughput, latency percentiles, adapter/workload IDs)
+- `samples.jsonl`: per-append samples (timestamp, latency, ok/error)
+- `run.meta.json`: minimal locator for the Python reporting layer
+
+## esbs list-workloads
+List workload YAML files in a directory (defaults to `workloads/`).
+
+Usage:
+```bash
+esbs list-workloads [--path <dir>]
+```
+
 Example:
-
 ```bash
-cargo run --release -- \
-    --adapter postgres \
-    --workload workloads/concurrent_writers.yaml \
-    --output results/raw/run_001.json
+esbs list-workloads
 ```
 
-Then:
+## esbs list-stores
+List available adapters.
 
+Usage:
 ```bash
-python python/report_generator.py results/raw/
+esbs list-stores
 ```
+
+Current output:
+```text
+umadb
+```
+
+Tips:
+- Prefer `--seed` to make runs comparable across machines.
+- Use `--log debug` for more detailed progress during development.
+- Start UmaDB quickly with the provided `docker-compose.yml` (`docker compose up -d umadb`).
 
 ---
 
