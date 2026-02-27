@@ -139,8 +139,13 @@ impl EventStoreAdapter for KurrentDbAdapter {
                 .ok_or_else(|| anyhow::anyhow!("KurrentDB client not connected"))?
         };
         let t0 = std::time::Instant::now();
-        let options = ReadStreamOptions::default().max_count(1);
-        let _ = client.read_stream("$all", &options).await;
+        // Perform a test append to verify the node is leader and accepting writes
+        let event = kurrentdb::EventData::binary("ping", vec![].into())
+            .id(Uuid::new_v4());
+        let options = AppendToStreamOptions::default();
+        client
+            .append_to_stream("_ping", &options, event)
+            .await?;
         Ok(t0.elapsed())
     }
 }
