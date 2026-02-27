@@ -8,3 +8,17 @@ services:
     volumes:
       - ./data/umadb:/data
     restart: unless-stopped
+
+  kurrentdb:
+    image: docker.kurrent.io/kurrent-latest/kurrentdb:25.1.0-x64-8.0-bookworm-slim
+    container_name: kurrentdb
+    ports:
+      - "2113:2113"
+    environment:
+      - KURRENTDB_INSECURE=true
+      - KURRENTDB_RUN_PROJECTIONS=All
+      - KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP=true
+      - KURRENTDB_MEM_DB=true
+    volumes:
+      - ./data/kurrentdb:/var/lib/kurrentdb
+    restart: unless-stopped

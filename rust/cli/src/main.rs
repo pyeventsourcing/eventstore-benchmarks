@@ -28,7 +28,7 @@ enum Commands {
         /// Path to workload YAML
         #[arg(long)]
         workload: PathBuf,
-        /// Output directory base (raw results will be placed under a timestamped folder)
+        /// Output directory base (raw results will be placed under an adapter-workload folder)
         #[arg(long, default_value = "results/raw")] 
         output: PathBuf,
         /// Connection URI for the store
@@ -76,6 +76,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::ListStores => {
             println!("umadb");
+            println!("kurrentdb");
             Ok(())
         }
         Commands::ListWorkloads { path } => {
@@ -91,18 +92,22 @@ fn main() -> Result<()> {
         Commands::Run { store, workload, output, uri, option, seed } => {
             // Load workload
             let wl = WorkloadFile::load(&workload)?;
+            let adapter_name = store.to_lowercase();
             fs::create_dir_all(&output)?;
-            let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
-            let run_dir = output.join(ts);
+            let wl_stem = workload.file_stem().unwrap_or_default().to_string_lossy();
+            let run_dir = output.join(format!("{}-{}", adapter_name, wl_stem));
             fs::create_dir_all(&run_dir)?;
 
             let conn = ConnectionParams { uri, options: option.into_iter().collect() };
 
             // Adapter registry (extendable in the future)
-            let adapter_name = store.to_lowercase();
             let adapter: Arc<dyn bench_core::EventStoreAdapter> = match adapter_name.as_str() {
                 "umadb" => {
                     let fac = umadb_adapter::UmaDbFactory;
+                    fac.create().into()
+                }
+                "kurrentdb" => {
+                    let fac = kurrentdb_adapter::KurrentDbFactory;
                     fac.create().into()
                 }
                 other => {

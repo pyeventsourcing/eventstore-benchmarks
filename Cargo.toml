@@ -2,6 +2,7 @@
 members = [
     "rust/bench-core",
     "rust/adapters/umadb",
+    "rust/adapters/kurrentdb",
     "rust/cli",
 ]
 resolver = "2"

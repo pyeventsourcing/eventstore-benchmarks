@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -130,8 +129,7 @@ def main():
     run = runs[-1]
     samples_df = pd.DataFrame(run["samples"])
 
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    report_dir = out_base / f"report-{run['summary']['adapter']}-{Path(run['summary']['workload']).stem}-{ts}"
+    report_dir = out_base / f"report-{run['summary']['adapter']}-{Path(run['summary']['workload']).stem}"
     report_dir.mkdir(parents=True, exist_ok=True)
 
     # plots
