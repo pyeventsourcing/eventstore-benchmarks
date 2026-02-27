@@ -154,11 +154,13 @@ def generate_consolidated_html(out_base: Path, runs):
         s = run["summary"]
         adapter = s["adapter"]
         workload = Path(s["workload"]).stem
+        writers = s.get("writers", "?")
         report_link = f"report-{adapter}-{workload}/index.html"
         summary_rows += f"""
       <tr>
         <td><a href='{report_link}'>{adapter}</a></td>
         <td>{workload}</td>
+        <td>{writers}</td>
         <td>{s['duration_s']:.1f}s</td>
         <td>{s['throughput_eps']:.0f}</td>
       </tr>"""
@@ -183,7 +185,7 @@ def generate_consolidated_html(out_base: Path, runs):
   <h1>ESBS Consolidated Report</h1>
   <h2>Summary</h2>
   <table>
-    <tr><th>Adapter</th><th>Workload</th><th>Duration</th><th>Throughput (eps)</th></tr>
+    <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th></tr>
     {summary_rows}
   </table>
   <h2>Combined Comparison</h2>
@@ -233,7 +235,8 @@ def main():
         plot_throughput(samples_df, report_dir / "throughput.png")
         generate_html(report_dir, run)
 
-        label = f"{adapter} / {workload}"
+        writers = run["summary"].get("writers", "?")
+        label = f"{adapter} / {workload} / w={writers}"
         all_run_data.append((label, samples_df))
 
         print(f"Report written to {report_dir}/index.html")

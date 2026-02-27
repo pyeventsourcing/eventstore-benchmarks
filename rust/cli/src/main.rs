@@ -31,9 +31,9 @@ enum Commands {
         /// Output directory base (raw results will be placed under an adapter-workload folder)
         #[arg(long, default_value = "results/raw")] 
         output: PathBuf,
-        /// Connection URI for the store
-        #[arg(long, default_value = "")] 
-        uri: String,
+        /// Connection URI for the store (defaults per adapter)
+        #[arg(long)]
+        uri: Option<String>,
         /// Optional key=value options (repeatable)
         #[arg(long, num_args=0.., value_parser = parse_key_val::<String, String>)]
         option: Vec<(String, String)>,
@@ -98,6 +98,12 @@ fn main() -> Result<()> {
             let run_dir = output.join(format!("{}-{}", adapter_name, wl_stem));
             fs::create_dir_all(&run_dir)?;
 
+            let default_uri = match adapter_name.as_str() {
+                "umadb" => "http://localhost:50051".to_string(),
+                "kurrentdb" => "esdb://localhost:2113?tls=false".to_string(),
+                _ => String::new(),
+            };
+            let uri = uri.unwrap_or(default_uri);
             let conn = ConnectionParams { uri, options: option.into_iter().collect() };
 
             // Adapter registry (extendable in the future)

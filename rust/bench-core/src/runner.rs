@@ -80,6 +80,7 @@ pub async fn run_workload(
     let summary = Summary {
         workload: wl.name,
         adapter: opts.adapter_name,
+        writers: wl.writers,
         events_written,
         events_read: 0,
         duration_s: dur_s,

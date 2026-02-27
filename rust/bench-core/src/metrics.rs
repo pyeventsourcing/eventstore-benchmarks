@@ -22,6 +22,7 @@ pub struct LatencyStats {
 pub struct Summary {
     pub workload: String,
     pub adapter: String,
+    pub writers: usize,
     pub events_written: u64,
     pub events_read: u64,
     pub duration_s: f64,
