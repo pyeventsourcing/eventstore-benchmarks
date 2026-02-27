@@ -72,6 +72,7 @@ fn adapter_factories() -> Vec<Box<dyn AdapterFactory>> {
         Box::new(umadb_adapter::UmaDbFactory),
         Box::new(kurrentdb_adapter::KurrentDbFactory),
         Box::new(axonserver_adapter::AxonServerFactory),
+        Box::new(eventsourcingdb_adapter::EventsourcingDbFactory),
     ]
 }
 
@@ -118,6 +119,7 @@ fn main() -> Result<()> {
                 "umadb" => "http://localhost:50051".to_string(),
                 "kurrentdb" => "esdb://localhost:2113?tls=false".to_string(),
                 "axonserver" => "http://localhost:8124".to_string(),
+                "eventsourcingdb" => "http://localhost:4000".to_string(),
                 _ => String::new(),
             };
             let uri = uri.unwrap_or(default_uri);

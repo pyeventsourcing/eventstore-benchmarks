@@ -5,6 +5,7 @@ members = [
     "rust/adapters/dummy",
     "rust/adapters/kurrentdb",
     "rust/testcontainers",
+    "rust/adapters/eventsourcingdb",
     "rust/cli",
 ]
 resolver = "2"
