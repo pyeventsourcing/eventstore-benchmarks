@@ -20,7 +20,7 @@ impl Image for UmaDb {
     }
 
     fn ready_conditions(&self) -> Vec<WaitFor> {
-        vec![WaitFor::message_on_stdout("Starting UmaDB")]
+        vec![WaitFor::message_on_stdout("UmaDB started")]
     }
 
     fn expose_ports(&self) -> &[ContainerPort] {
