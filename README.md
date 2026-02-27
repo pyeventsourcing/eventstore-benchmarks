@@ -320,10 +320,10 @@ Quick start (UmaDB example):
 docker compose up -d umadb
 
 # 2) Build the CLI
-toolchain: cargo build -p esbs
+toolchain: cargo build --release -p esbs
 
 # 3) Run a sample workload (writes raw results under results/raw/<timestamp>/)
-./target/debug/esbs run \
+./target/release/esbs run \
   --store umadb \
   --workload workloads/concurrent_writers.yaml \
   --uri http://localhost:50051 \
@@ -341,7 +341,7 @@ See the full command reference below for more options (TLS, API keys, custom out
 
 # CLI Commands
 
-The benchmark CLI is `esbs`. You can run it from `./target/debug/esbs` after building, or via Cargo:
+The benchmark CLI is `esbs`. You can run it from `./target/release/esbs` after building, or via Cargo:
 
 ```bash
 cargo run -p esbs -- <command> [options]
