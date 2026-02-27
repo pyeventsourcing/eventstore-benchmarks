@@ -1,0 +1,9 @@
+[package]
+name = "dummy-adapter"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+bench-core = { path = "../../bench-core" }
+tokio = { version = "1", features = ["time"] }

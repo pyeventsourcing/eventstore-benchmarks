@@ -66,6 +66,14 @@ where
     }
 }
 
+fn adapter_factories() -> Vec<Box<dyn AdapterFactory>> {
+    vec![
+        Box::new(dummy_adapter::DummyFactory),
+        Box::new(umadb_adapter::UmaDbFactory),
+        Box::new(kurrentdb_adapter::KurrentDbFactory),
+    ]
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -73,10 +81,13 @@ fn main() -> Result<()> {
         .with_env_filter(EnvFilter::new(cli.log))
         .init();
 
+    let factories = adapter_factories();
+
     match cli.command {
         Commands::ListStores => {
-            println!("umadb");
-            println!("kurrentdb");
+            for f in &factories {
+                println!("{}", f.name());
+            }
             Ok(())
         }
         Commands::ListWorkloads { path } => {
@@ -106,20 +117,10 @@ fn main() -> Result<()> {
             let uri = uri.unwrap_or(default_uri);
             let conn = ConnectionParams { uri, options: option.into_iter().collect() };
 
-            // Adapter registry (extendable in the future)
-            let adapter: Arc<dyn bench_core::EventStoreAdapter> = match adapter_name.as_str() {
-                "umadb" => {
-                    let fac = umadb_adapter::UmaDbFactory;
-                    fac.create().into()
-                }
-                "kurrentdb" => {
-                    let fac = kurrentdb_adapter::KurrentDbFactory;
-                    fac.create().into()
-                }
-                other => {
-                    anyhow::bail!("unknown adapter: {}", other)
-                }
-            };
+            let factory = factories.iter()
+                .find(|f| f.name() == adapter_name)
+                .ok_or_else(|| anyhow::anyhow!("unknown adapter: {}", adapter_name))?;
+            let adapter: Arc<dyn bench_core::EventStoreAdapter> = factory.create().into();
 
             let rt = Runtime::new()?;
             let adapter_name_for_run = adapter_name.clone();

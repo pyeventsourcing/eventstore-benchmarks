@@ -1,0 +1,7 @@
+[package]
+name = "bench-testcontainers"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+testcontainers = "0.23"
