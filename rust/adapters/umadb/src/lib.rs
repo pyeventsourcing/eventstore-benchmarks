@@ -1,8 +1,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
+use bench_testcontainers::umadb::{UmaDb, UMADB_PORT};
 use futures::StreamExt;
 use std::sync::Arc;
+use testcontainers::ContainerAsync;
+use testcontainers::runners::AsyncRunner;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use umadb_client::UmaDBClient;
@@ -11,16 +14,60 @@ use uuid::Uuid;
 
 pub struct UmaDbAdapter {
     client: Arc<Mutex<Option<Arc<umadb_client::AsyncUmaDBClient>>>>,
+    container: Arc<Mutex<Option<ContainerAsync<UmaDb>>>>,
 }
 
 impl UmaDbAdapter {
     pub fn new() -> Self {
-        Self { client: Arc::new(Mutex::new(None)) }
+        Self {
+            client: Arc::new(Mutex::new(None)),
+            container: Arc::new(Mutex::new(None)),
+        }
     }
 }
 
 #[async_trait]
 impl EventStoreAdapter for UmaDbAdapter {
+    async fn setup(&self) -> Result<()> {
+        let container = UmaDb::default().start().await?;
+        let host_port = container.get_host_port_ipv4(UMADB_PORT).await?;
+        let uri = format!("http://localhost:{}", host_port);
+
+        let mut container_guard = self.container.lock().await;
+        *container_guard = Some(container);
+        drop(container_guard);
+
+        for _ in 0..60 {
+            if let Ok(client) = UmaDBClient::new(uri.clone()).connect_async().await {
+                let mut client_guard = self.client.lock().await;
+                *client_guard = Some(Arc::new(client));
+                drop(client_guard);
+
+                if self.ping().await.is_ok() {
+                    return Ok(());
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("UmaDB container did not become ready within 60s")
+    }
+
+    async fn teardown(&self) -> Result<()> {
+        {
+            let mut guard = self.client.lock().await;
+            *guard = None;
+        }
+        let container = {
+            let mut guard = self.container.lock().await;
+            guard.take()
+        };
+        if let Some(c) = container {
+            c.stop().await?;
+            drop(c);
+        }
+        Ok(())
+    }
+
     async fn connect(&self, params: &ConnectionParams) -> Result<()> {
         let mut builder = UmaDBClient::new(params.uri.clone());
         if let Some(v) = params.options.get("api_key") {
@@ -97,7 +144,7 @@ impl EventStoreAdapter for UmaDbAdapter {
             guard.clone().ok_or_else(|| anyhow::anyhow!("UmaDB client not connected"))?
         };
         let t0 = std::time::Instant::now();
-        let _ = client_arc.head().await?; // Option<u64>
+        let _ = client_arc.head().await?;
         Ok(t0.elapsed())
     }
 }

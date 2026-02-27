@@ -20,7 +20,7 @@ pub async fn run_workload(
     wl: Workload,
     opts: RunOptions,
 ) -> Result<RunMetrics> {
-    adapter.connect(&opts.conn).await?;
+    adapter.setup().await?;
 
     let end_at = Instant::now() + Duration::from_secs(wl.duration_seconds);
 
@@ -89,5 +89,9 @@ pub async fn run_workload(
     };
 
     let samples_vec = samples.lock().await.clone();
-    Ok(RunMetrics { summary, samples: samples_vec })
+    let metrics = RunMetrics { summary, samples: samples_vec };
+
+    adapter.teardown().await?;
+
+    Ok(metrics)
 }

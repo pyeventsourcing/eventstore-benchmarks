@@ -14,7 +14,5 @@ umadb-client = "0.1"
 umadb-dcb = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 futures = "0.3"
-
-[dev-dependencies]
 bench-testcontainers = { path = "../../testcontainers" }
 testcontainers = "0.23"

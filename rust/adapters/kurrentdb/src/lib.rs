@@ -1,28 +1,74 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
+use bench_testcontainers::kurrentdb::{KurrentDb, KURRENTDB_PORT};
 use kurrentdb::{
     AppendToStreamOptions, Client, ClientSettings, ReadStreamOptions, StreamPosition,
 };
 use std::sync::Arc;
+use testcontainers::ContainerAsync;
+use testcontainers::runners::AsyncRunner;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use uuid::Uuid;
 
 pub struct KurrentDbAdapter {
     client: Arc<Mutex<Option<Client>>>,
+    container: Arc<Mutex<Option<ContainerAsync<KurrentDb>>>>,
 }
 
 impl KurrentDbAdapter {
     pub fn new() -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
+            container: Arc::new(Mutex::new(None)),
         }
     }
 }
 
 #[async_trait]
 impl EventStoreAdapter for KurrentDbAdapter {
+    async fn setup(&self) -> Result<()> {
+        let container = KurrentDb::default().start().await?;
+        let host_port = container.get_host_port_ipv4(KURRENTDB_PORT).await?;
+        let uri = format!("esdb://localhost:{}?tls=false", host_port);
+
+        let settings: ClientSettings = uri.parse()?;
+        let client = Client::new(settings).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        let mut client_guard = self.client.lock().await;
+        *client_guard = Some(client);
+        drop(client_guard);
+
+        let mut container_guard = self.container.lock().await;
+        *container_guard = Some(container);
+        drop(container_guard);
+
+        for _ in 0..60 {
+            if self.ping().await.is_ok() {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("KurrentDB container did not become ready within 60s")
+    }
+
+    async fn teardown(&self) -> Result<()> {
+        {
+            let mut guard = self.client.lock().await;
+            *guard = None;
+        }
+        let container = {
+            let mut guard = self.container.lock().await;
+            guard.take()
+        };
+        if let Some(c) = container {
+            c.stop().await?;
+            drop(c);
+        }
+        Ok(())
+    }
+
     async fn connect(&self, params: &ConnectionParams) -> Result<()> {
         let conn_str = if params.uri.is_empty() {
             "esdb://localhost:2113?tls=false".to_string()
@@ -93,7 +139,6 @@ impl EventStoreAdapter for KurrentDbAdapter {
                 .ok_or_else(|| anyhow::anyhow!("KurrentDB client not connected"))?
         };
         let t0 = std::time::Instant::now();
-        // Read 1 event from $all as a health check
         let options = ReadStreamOptions::default().max_count(1);
         let _ = client.read_stream("$all", &options).await;
         Ok(t0.elapsed())
