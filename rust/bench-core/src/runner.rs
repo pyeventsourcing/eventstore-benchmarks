@@ -20,7 +20,11 @@ pub async fn run_workload(
     wl: Workload,
     opts: RunOptions,
 ) -> Result<RunMetrics> {
+
+    println!("Starting {} container...", opts.adapter_name);
+    let start_time = std::time::Instant::now();
     adapter.setup().await?;
+    println!("{} container is ready after {} seconds", opts.adapter_name, start_time.elapsed().as_secs());
 
     let end_at = Instant::now() + Duration::from_secs(wl.duration_seconds);
 

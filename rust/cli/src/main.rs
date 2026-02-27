@@ -77,8 +77,12 @@ fn adapter_factories() -> Vec<Box<dyn AdapterFactory>> {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Supress the noise from the KurrentDB Rust client.
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::new(cli.log))
+        .with_env_filter(
+            EnvFilter::new(&cli.log)
+                .add_directive("kurrentdb::grpc=off".parse().unwrap())
+        )
         .init();
 
     let factories = adapter_factories();

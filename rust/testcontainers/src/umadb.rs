@@ -2,7 +2,7 @@ use testcontainers::core::{ContainerPort, WaitFor};
 use testcontainers::Image;
 
 const NAME: &str = "umadb/umadb";
-const TAG: &str = "latest";
+const TAG: &str = "0.4.0";
 
 /// Container port exposed by UmaDB (gRPC).
 pub const UMADB_PORT: ContainerPort = ContainerPort::Tcp(50051);
@@ -20,7 +20,7 @@ impl Image for UmaDb {
     }
 
     fn ready_conditions(&self) -> Vec<WaitFor> {
-        vec![]
+        vec![WaitFor::message_on_stdout("UmaDB started")]
     }
 
     fn expose_ports(&self) -> &[ContainerPort] {
