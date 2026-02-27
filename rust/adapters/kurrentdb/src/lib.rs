@@ -33,20 +33,23 @@ impl EventStoreAdapter for KurrentDbAdapter {
         let host_port = container.get_host_port_ipv4(KURRENTDB_PORT).await?;
         let uri = format!("esdb://localhost:{}?tls=false", host_port);
 
-        let settings: ClientSettings = uri.parse()?;
-        let client = Client::new(settings).map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        let mut client_guard = self.client.lock().await;
-        *client_guard = Some(client);
-        drop(client_guard);
-
         let mut container_guard = self.container.lock().await;
         *container_guard = Some(container);
         drop(container_guard);
 
         for _ in 0..60 {
-            if self.ping().await.is_ok() {
-                return Ok(());
+            // Recreate the client on each attempt so the gRPC channel
+            // doesn't cache a failed connection from before the node is ready.
+            if let Ok(settings) = uri.parse::<ClientSettings>() {
+                if let Ok(client) = Client::new(settings) {
+                    let mut client_guard = self.client.lock().await;
+                    *client_guard = Some(client);
+                    drop(client_guard);
+
+                    if self.ping().await.is_ok() {
+                        return Ok(());
+                    }
+                }
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }

@@ -1,22 +1,10 @@
-use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadRequest};
-use bench_testcontainers::umadb::{UmaDb, UMADB_PORT};
-use testcontainers::runners::AsyncRunner;
+use bench_core::adapter::{EventData, EventStoreAdapter, ReadRequest};
 use umadb_adapter::UmaDbAdapter;
 
 #[tokio::test]
-async fn append_and_read() {
-    let container = UmaDb.start().await.unwrap();
-    let host_port = container.get_host_port_ipv4(UMADB_PORT).await.unwrap();
-    let uri = format!("http://localhost:{}", host_port);
-
+async fn setup_starts_container_and_accepts_writes() {
     let adapter = UmaDbAdapter::new();
-    adapter
-        .connect(&ConnectionParams {
-            uri,
-            options: Default::default(),
-        })
-        .await
-        .unwrap();
+    adapter.setup().await.unwrap();
 
     adapter
         .append(EventData {
@@ -40,23 +28,17 @@ async fn append_and_read() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type, "TestEvent");
     assert_eq!(events[0].payload, b"hello");
+
+    adapter.teardown().await.unwrap();
 }
 
 #[tokio::test]
-async fn ping() {
-    let container = UmaDb.start().await.unwrap();
-    let host_port = container.get_host_port_ipv4(UMADB_PORT).await.unwrap();
-    let uri = format!("http://localhost:{}", host_port);
-
+async fn setup_ping_returns_latency() {
     let adapter = UmaDbAdapter::new();
-    adapter
-        .connect(&ConnectionParams {
-            uri,
-            options: Default::default(),
-        })
-        .await
-        .unwrap();
+    adapter.setup().await.unwrap();
 
     let latency = adapter.ping().await.unwrap();
     assert!(latency.as_millis() < 5000);
+
+    adapter.teardown().await.unwrap();
 }

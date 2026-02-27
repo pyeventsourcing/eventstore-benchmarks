@@ -22,6 +22,9 @@ impl Default for KurrentDb {
                     "KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP".to_string(),
                     "true".to_string(),
                 ),
+                ("KURRENTDB_CLUSTER_SIZE".to_string(), "1".to_string()),
+                ("KURRENTDB_MEM_DB".to_string(), "false".to_string()),
+                ("KURRENTDB_TELEMETRY_OPTOUT".to_string(), "true".to_string()),
             ],
         }
     }

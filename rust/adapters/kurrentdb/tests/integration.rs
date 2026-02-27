@@ -1,22 +1,10 @@
-use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadRequest};
-use bench_testcontainers::kurrentdb::{KurrentDb, KURRENTDB_PORT};
+use bench_core::adapter::{EventData, EventStoreAdapter, ReadRequest};
 use kurrentdb_adapter::KurrentDbAdapter;
-use testcontainers::runners::AsyncRunner;
 
 #[tokio::test]
-async fn append_and_read() {
-    let container = KurrentDb::default().start().await.unwrap();
-    let host_port = container.get_host_port_ipv4(KURRENTDB_PORT).await.unwrap();
-    let uri = format!("esdb://localhost:{}?tls=false", host_port);
-
+async fn setup_starts_container_and_accepts_writes() {
     let adapter = KurrentDbAdapter::new();
-    adapter
-        .connect(&ConnectionParams {
-            uri,
-            options: Default::default(),
-        })
-        .await
-        .unwrap();
+    adapter.setup().await.unwrap();
 
     adapter
         .append(EventData {
@@ -40,23 +28,17 @@ async fn append_and_read() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type, "TestEvent");
     assert_eq!(events[0].payload, b"hello");
+
+    adapter.teardown().await.unwrap();
 }
 
 #[tokio::test]
-async fn ping() {
-    let container = KurrentDb::default().start().await.unwrap();
-    let host_port = container.get_host_port_ipv4(KURRENTDB_PORT).await.unwrap();
-    let uri = format!("esdb://localhost:{}?tls=false", host_port);
-
+async fn setup_ping_returns_latency() {
     let adapter = KurrentDbAdapter::new();
-    adapter
-        .connect(&ConnectionParams {
-            uri,
-            options: Default::default(),
-        })
-        .await
-        .unwrap();
+    adapter.setup().await.unwrap();
 
     let latency = adapter.ping().await.unwrap();
     assert!(latency.as_millis() < 5000);
+
+    adapter.teardown().await.unwrap();
 }
