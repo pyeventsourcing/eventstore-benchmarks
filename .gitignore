@@ -22,4 +22,9 @@ target
 
 # Python virtual environment
 .venv/
+
+# Benchmark results
 results/
+
+# Data folder
+data/
