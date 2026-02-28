@@ -3,6 +3,8 @@ use async_trait::async_trait;
 use axonserver_client::proto::dcb::{Criterion, Event, Tag, TaggedEvent, TagsAndNamesCriterion};
 use axonserver_client::AxonServerClient;
 use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
+use bench_core::container_stats;
+use bench_core::metrics::ContainerMetrics;
 use bench_testcontainers::axonserver::{AxonServer, AXONSERVER_GRPC_PORT};
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
@@ -183,6 +185,30 @@ impl EventStoreAdapter for AxonServerAdapter {
         let mut guard = self.client.lock().await;
         *guard = Some(client);
         Ok(elapsed)
+    }
+
+    async fn collect_container_metrics(&self) -> Result<ContainerMetrics> {
+        let container_guard = self.container.lock().await;
+        if let Some(container) = container_guard.as_ref() {
+            let container_id = container.id();
+
+            // Get image size
+            let image_size_bytes = container_stats::get_container_image_size(container_id).ok();
+
+            // Get current stats
+            let stats = container_stats::get_container_stats(container_id).ok();
+
+            Ok(ContainerMetrics {
+                image_size_bytes,
+                startup_time_s: 0.0, // Will be set by runner
+                avg_cpu_percent: stats.as_ref().map(|s| s.cpu_percent),
+                peak_cpu_percent: stats.as_ref().map(|s| s.cpu_percent),
+                avg_memory_bytes: stats.as_ref().map(|s| s.memory_bytes),
+                peak_memory_bytes: stats.map(|s| s.memory_bytes),
+            })
+        } else {
+            Ok(ContainerMetrics::default())
+        }
     }
 }
 

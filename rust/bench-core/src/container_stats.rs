@@ -3,39 +3,43 @@ use serde::Deserialize;
 use std::process::Command;
 
 #[derive(Debug, Deserialize)]
-struct DockerInspectSize {
-    #[serde(rename = "SizeRootFs")]
-    size_root_fs: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct DockerInspect {
+struct DockerImageInspect {
     #[serde(rename = "Size")]
-    size: Option<DockerInspectSize>,
+    size: Option<u64>,
 }
 
-/// Get the container image size in bytes using docker inspect
+/// Get the container image size in bytes
 pub fn get_container_image_size(container_id: &str) -> Result<u64> {
+    // First, get the image ID from the container
     let output = Command::new("docker")
-        .args(&["inspect", "--size", container_id])
+        .args(&["inspect", "--format", "{{.Image}}", container_id])
         .output()?;
 
     if !output.status.success() {
-        anyhow::bail!("docker inspect failed");
+        anyhow::bail!("docker inspect container failed");
+    }
+
+    let image_id = String::from_utf8(output.stdout)?.trim().to_string();
+
+    // Then get the image size
+    let output = Command::new("docker")
+        .args(&["image", "inspect", &image_id])
+        .output()?;
+
+    if !output.status.success() {
+        anyhow::bail!("docker image inspect failed");
     }
 
     let json_str = String::from_utf8(output.stdout)?;
-    let inspect: Vec<DockerInspect> = serde_json::from_str(&json_str)?;
+    let inspect: Vec<DockerImageInspect> = serde_json::from_str(&json_str)?;
 
     if let Some(first) = inspect.first() {
-        if let Some(size_info) = &first.size {
-            if let Some(size) = size_info.size_root_fs {
-                return Ok(size);
-            }
+        if let Some(size) = first.size {
+            return Ok(size);
         }
     }
 
-    anyhow::bail!("Could not extract image size from docker inspect")
+    anyhow::bail!("Could not extract image size from docker image inspect")
 }
 
 #[derive(Debug)]
