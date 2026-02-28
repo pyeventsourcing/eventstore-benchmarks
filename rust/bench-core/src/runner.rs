@@ -73,8 +73,9 @@ pub async fn run_workload(
     let mut set = JoinSet::new();
 
     // Start a background task to periodically collect container stats during the workload
+    // Use spawn_blocking to avoid blocking the async runtime with docker CLI calls
     let container_id = container_manager.as_ref().and_then(|cm| cm.container_id());
-    let stats_handle = tokio::spawn(async move {
+    let stats_handle = tokio::task::spawn_blocking(move || {
         let mut cpu_samples = Vec::new();
         let mut mem_samples = Vec::new();
 
@@ -87,7 +88,7 @@ pub async fn run_workload(
                 }
             }
             // Sample every 1 second to capture short workloads
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            std::thread::sleep(Duration::from_secs(1));
         }
 
         (cpu_samples, mem_samples)
