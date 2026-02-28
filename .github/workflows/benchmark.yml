@@ -32,6 +32,79 @@ jobs:
       - name: Run benchmark sweep
         run: ./scripts/sweep_writers.sh
 
+      - name: Generate job summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # Benchmark Results
+
+          ## Throughput Comparison
+
+          | Store | 1 Writer | 2 Writers | 4 Writers | 8 Writers | 16 Writers |
+          |-------|----------|-----------|-----------|-----------|------------|
+          EOF
+
+          # Extract throughput data for each store/writer combination
+          for store in umadb kurrentdb axonserver eventsourcingdb; do
+            printf "| %s " "$store" >> $GITHUB_STEP_SUMMARY
+            for w in 1 2 4 8 16; do
+              json_file=$(find results/raw -name "summary.json" -exec grep -l "\"adapter\": \"$store\"" {} \; -exec grep -l "\"writers\": $w" {} \; | head -1)
+              if [ -n "$json_file" ]; then
+                throughput=$(jq -r '.throughput_eps' "$json_file" | xargs printf "%.0f")
+                printf "| %s eps " "$throughput" >> $GITHUB_STEP_SUMMARY
+              else
+                printf "| N/A " >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+            printf "|\n" >> $GITHUB_STEP_SUMMARY
+          done
+
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+
+          ## Latency (p99) Comparison
+
+          | Store | 1 Writer | 2 Writers | 4 Writers | 8 Writers | 16 Writers |
+          |-------|----------|-----------|-----------|-----------|------------|
+          EOF
+
+          # Extract p99 latency for each store/writer combination
+          for store in umadb kurrentdb axonserver eventsourcingdb; do
+            printf "| %s " "$store" >> $GITHUB_STEP_SUMMARY
+            for w in 1 2 4 8 16; do
+              json_file=$(find results/raw -name "summary.json" -exec grep -l "\"adapter\": \"$store\"" {} \; -exec grep -l "\"writers\": $w" {} \; | head -1)
+              if [ -n "$json_file" ]; then
+                p99=$(jq -r '.latency.p99_ms' "$json_file" | xargs printf "%.2f")
+                printf "| %s ms " "$p99" >> $GITHUB_STEP_SUMMARY
+              else
+                printf "| N/A " >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+            printf "|\n" >> $GITHUB_STEP_SUMMARY
+          done
+
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+
+          ## Container Metrics (16 Writers)
+
+          | Store | Image Size | Startup Time | Peak CPU | Peak Memory |
+          |-------|------------|--------------|----------|-------------|
+          EOF
+
+          # Extract container metrics for 16 writers
+          for store in umadb kurrentdb axonserver eventsourcingdb; do
+            json_file=$(find results/raw -name "summary.json" -exec grep -l "\"adapter\": \"$store\"" {} \; -exec grep -l "\"writers\": 16" {} \; | head -1)
+            if [ -n "$json_file" ]; then
+              image_mb=$(jq -r '.container.image_size_bytes / 1024 / 1024' "$json_file" | xargs printf "%.0f")
+              startup=$(jq -r '.container.startup_time_s' "$json_file" | xargs printf "%.2f")
+              peak_cpu=$(jq -r '.container.peak_cpu_percent' "$json_file" | xargs printf "%.1f")
+              peak_mem=$(jq -r '.container.peak_memory_bytes / 1024 / 1024' "$json_file" | xargs printf "%.0f")
+              printf "| %s | %s MB | %s s | %s%% | %s MB |\n" "$store" "$image_mb" "$startup" "$peak_cpu" "$peak_mem" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📊 Full report available in artifacts: \`benchmark-results\`" >> $GITHUB_STEP_SUMMARY
+
       - name: Upload results
         uses: actions/upload-artifact@v4
         if: always()
