@@ -1,4 +1,4 @@
-use crate::adapter::{ConnectionParams, EventData, EventStoreAdapter};
+use crate::adapter::{AdapterFactory, ConnectionParams, EventData, EventStoreAdapter};
 use crate::metrics::{now_ms, LatencyRecorder, RawSample, RunMetrics, Summary};
 use crate::workload::Workload;
 use anyhow::Result;
@@ -16,15 +16,18 @@ pub struct RunOptions {
 }
 
 pub async fn run_workload(
-    adapter: Arc<dyn EventStoreAdapter>,
+    factory: Arc<dyn AdapterFactory>,
     wl: Workload,
     opts: RunOptions,
 ) -> Result<RunMetrics> {
+    // Create a shared adapter for setup/teardown and stats collection
+    let shared_adapter: Arc<dyn EventStoreAdapter> = Arc::from(factory.create());
+
     // Start container.
     println!("Starting {} container...", opts.adapter_name);
     let setup_start = std::time::Instant::now();
 
-    adapter.setup().await?;
+    shared_adapter.setup().await?;
 
     let startup_time_s = setup_start.elapsed().as_secs_f64();
     println!(
@@ -48,7 +51,7 @@ pub async fn run_workload(
     let mut set = JoinSet::new();
 
     // Start a background task to periodically collect container stats during the workload
-    let adapter_for_stats = adapter.clone();
+    let adapter_for_stats = shared_adapter.clone();
     let stats_handle = tokio::spawn(async move {
         let mut cpu_samples = Vec::new();
         let mut mem_samples = Vec::new();
@@ -70,14 +73,24 @@ pub async fn run_workload(
         (cpu_samples, mem_samples)
     });
 
-    // Start one client per writer
+    // Start one client per writer - each gets its own adapter instance
     for i in 0..wl.writers {
-        let adapter = adapter.clone();
+        let factory = factory.clone();
         let samples = samples.clone();
         let wl = wl.clone();
+        let opts = opts.clone();
         let seed = opts.seed + (i as u64);
 
         set.spawn(async move {
+            // Create a dedicated adapter instance for this writer
+            let adapter: Arc<dyn EventStoreAdapter> = Arc::from(factory.create());
+
+            // Connect the adapter
+            if let Err(e) = adapter.connect(&opts.conn).await {
+                eprintln!("Writer {} failed to connect: {}", i, e);
+                return LatencyRecorder::new();
+            }
+
             let mut rng = StdRng::seed_from_u64(seed);
             let use_heavy_tail = wl.streams.distribution.to_lowercase() == "zipf";
             let hot_set = 100_u64.min(wl.streams.unique_streams.max(1));
@@ -129,7 +142,7 @@ pub async fn run_workload(
     let (cpu_samples, mem_samples) = stats_handle.await.unwrap_or_default();
 
     // Collect final container metrics (for image size)
-    let mut container_metrics = adapter.collect_container_metrics().await.unwrap_or_default();
+    let mut container_metrics = shared_adapter.collect_container_metrics().await.unwrap_or_default();
     container_metrics.startup_time_s = startup_time_s;
 
     // Compute CPU and memory statistics from samples collected during workload
@@ -167,7 +180,7 @@ pub async fn run_workload(
         samples: samples_vec,
     };
 
-    adapter.teardown().await?;
+    shared_adapter.teardown().await?;
 
     Ok(metrics)
 }

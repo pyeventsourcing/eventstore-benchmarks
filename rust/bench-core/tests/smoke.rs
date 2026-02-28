@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
+use bench_core::adapter::{AdapterFactory, ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
 use bench_core::{run_workload, RunOptions, StreamsConfig, Workload};
 
 struct DummyAdapter;
@@ -25,9 +25,20 @@ impl EventStoreAdapter for DummyAdapter {
     }
 }
 
+struct DummyFactory;
+
+impl AdapterFactory for DummyFactory {
+    fn name(&self) -> &'static str {
+        "dummy"
+    }
+    fn create(&self) -> Box<dyn EventStoreAdapter> {
+        Box::new(DummyAdapter)
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_workload_smoke() {
-    let adapter = Arc::new(DummyAdapter);
+    let factory: Arc<dyn AdapterFactory> = Arc::new(DummyFactory);
     let wl = Workload {
         name: "test".to_string(),
         duration_seconds: 1,
@@ -49,7 +60,7 @@ async fn run_workload_smoke() {
         seed: 42,
     };
 
-    let res = run_workload(adapter, wl, opts).await.expect("run");
+    let res = run_workload(factory, wl, opts).await.expect("run");
     assert!(res.summary.events_written > 0);
     assert!(res.summary.throughput_eps > 0.0);
     assert!(!res.samples.is_empty());
