@@ -166,37 +166,44 @@ def plot_p99_scaling(runs, out_path: Path):
 
 def plot_container_metrics(runs, out_path: Path):
     """Create a dramatic visualization of container resource usage."""
-    # Collect data for each adapter
-    adapters = []
-    image_sizes = []
-    startup_times = []
-    peak_cpus = []
-    peak_mems = []
+    # Collect data for each unique adapter (use dict to deduplicate and aggregate)
+    adapter_data = {}
 
     for run in runs:
         s = run["summary"]
+        adapter = s["adapter"]
         container = s.get("container", {})
 
         # Only include if we have meaningful data
-        if container.get("image_size_bytes") or container.get("peak_cpu_percent"):
-            adapters.append(s["adapter"])
+        if not (container.get("image_size_bytes") or container.get("peak_cpu_percent")):
+            continue
 
-            # Image size in MB
-            image_size = container.get("image_size_bytes", 0) / (1024 * 1024)
-            image_sizes.append(image_size)
+        if adapter not in adapter_data:
+            adapter_data[adapter] = {
+                "image_size": 0,
+                "startup_time": 0,
+                "peak_cpu": 0,
+                "peak_mem": 0,
+                "count": 0
+            }
 
-            # Startup time in seconds
-            startup_times.append(container.get("startup_time_s", 0))
+        # Accumulate data (we'll use max for peaks, average for others)
+        data = adapter_data[adapter]
+        data["image_size"] = max(data["image_size"], container.get("image_size_bytes", 0) / (1024 * 1024))
+        data["startup_time"] += container.get("startup_time_s", 0)
+        data["peak_cpu"] = max(data["peak_cpu"], container.get("peak_cpu_percent", 0))
+        data["peak_mem"] = max(data["peak_mem"], container.get("peak_memory_bytes", 0) / (1024 * 1024))
+        data["count"] += 1
 
-            # Peak CPU percentage
-            peak_cpus.append(container.get("peak_cpu_percent", 0))
-
-            # Peak memory in MB
-            peak_mem = container.get("peak_memory_bytes", 0) / (1024 * 1024)
-            peak_mems.append(peak_mem)
-
-    if not adapters:
+    if not adapter_data:
         return
+
+    # Extract lists for plotting
+    adapters = sorted(adapter_data.keys())
+    image_sizes = [adapter_data[a]["image_size"] for a in adapters]
+    startup_times = [adapter_data[a]["startup_time"] / adapter_data[a]["count"] for a in adapters]  # Average
+    peak_cpus = [adapter_data[a]["peak_cpu"] for a in adapters]
+    peak_mems = [adapter_data[a]["peak_mem"] for a in adapters]
 
     # Create a 2x2 subplot for dramatic effect
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10))
@@ -204,29 +211,29 @@ def plot_container_metrics(runs, out_path: Path):
 
     colors = plt.cm.Set3(np.linspace(0, 1, len(adapters)))
 
-    # 1. Image Size - Horizontal bar chart (more dramatic)
-    y_pos = np.arange(len(adapters))
-    ax1.barh(y_pos, image_sizes, color=colors)
-    ax1.set_yticks(y_pos)
-    ax1.set_yticklabels(adapters)
-    ax1.set_xlabel("Image Size (MB)", fontweight='bold')
+    # 1. Image Size - Vertical bar chart
+    bars1 = ax1.bar(adapters, image_sizes, color=colors, edgecolor='black', linewidth=1.5)
+    ax1.set_ylabel("Image Size (MB)", fontweight='bold')
     ax1.set_title("Container Image Size", fontweight='bold')
-    ax1.grid(True, alpha=0.3, axis='x')
-    # Add value labels
-    for i, v in enumerate(image_sizes):
-        ax1.text(v + max(image_sizes) * 0.01, i, f'{v:.0f}', va='center', fontweight='bold')
+    ax1.grid(True, alpha=0.3, axis='y')
+    ax1.set_xticklabels(adapters, rotation=45, ha='right')
+    for bar, v in zip(bars1, image_sizes):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                f'{v:.0f}', ha='center', va='bottom', fontweight='bold')
 
-    # 2. Startup Time - Horizontal bar chart
-    ax2.barh(y_pos, startup_times, color=colors)
-    ax2.set_yticks(y_pos)
-    ax2.set_yticklabels(adapters)
-    ax2.set_xlabel("Startup Time (seconds)", fontweight='bold')
+    # 2. Startup Time - Vertical bar chart
+    bars2 = ax2.bar(adapters, startup_times, color=colors, edgecolor='black', linewidth=1.5)
+    ax2.set_ylabel("Startup Time (seconds)", fontweight='bold')
     ax2.set_title("Container Startup Time", fontweight='bold')
-    ax2.grid(True, alpha=0.3, axis='x')
-    for i, v in enumerate(startup_times):
-        ax2.text(v + max(startup_times) * 0.01, i, f'{v:.2f}s', va='center', fontweight='bold')
+    ax2.grid(True, alpha=0.3, axis='y')
+    ax2.set_xticklabels(adapters, rotation=45, ha='right')
+    for bar, v in zip(bars2, startup_times):
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height,
+                f'{v:.2f}s', ha='center', va='bottom', fontweight='bold')
 
-    # 3. Peak CPU - Vertical bar chart with gradient effect
+    # 3. Peak CPU - Vertical bar chart
     bars3 = ax3.bar(adapters, peak_cpus, color=colors, edgecolor='black', linewidth=1.5)
     ax3.set_ylabel("Peak CPU (%)", fontweight='bold')
     ax3.set_title("Peak CPU Usage", fontweight='bold')
