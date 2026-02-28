@@ -1,6 +1,6 @@
 use anyhow::Result;
-use bench_core::{run_workload, AdapterFactory, RunOptions, WorkloadFile};
 use bench_core::adapter::ConnectionParams;
+use bench_core::{run_workload, AdapterFactory, RunOptions, WorkloadFile};
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::fs;
@@ -10,9 +10,9 @@ use tokio::runtime::Runtime;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
-#[command(name = "esbs", version, about = "Event Store Benchmark Suite CLI")] 
+#[command(name = "esbs", version, about = "Event Store Benchmark Suite CLI")]
 struct Cli {
-    #[arg(long, default_value = "info")] 
+    #[arg(long, default_value = "info")]
     log: String,
     #[command(subcommand)]
     command: Commands,
@@ -29,7 +29,7 @@ enum Commands {
         #[arg(long)]
         workload: PathBuf,
         /// Output directory base (raw results will be placed under an adapter-workload folder)
-        #[arg(long, default_value = "results/raw")] 
+        #[arg(long, default_value = "results/raw")]
         output: PathBuf,
         /// Connection URI for the store (defaults per adapter)
         #[arg(long)]
@@ -43,7 +43,7 @@ enum Commands {
     },
     /// List available workloads in the repo
     ListWorkloads {
-        #[arg(long, default_value = "workloads")] 
+        #[arg(long, default_value = "workloads")]
         path: PathBuf,
     },
     /// List available store adapters
@@ -58,8 +58,12 @@ where
     let pos = s.find('=');
     match pos {
         Some(pos) => {
-            let key = s[..pos].parse().map_err(|_| format!("invalid key: {}", &s[..pos]))?;
-            let value = s[pos+1..].parse().map_err(|_| format!("invalid value: {}", &s[pos+1..]))?;
+            let key = s[..pos]
+                .parse()
+                .map_err(|_| format!("invalid key: {}", &s[..pos]))?;
+            let value = s[pos + 1..]
+                .parse()
+                .map_err(|_| format!("invalid value: {}", &s[pos + 1..]))?;
             Ok((key, value))
         }
         None => Err(format!("invalid KEY=VALUE: no `=` in `{}`", s)),
@@ -82,8 +86,7 @@ fn main() -> Result<()> {
     // Supress the noise from the KurrentDB Rust client.
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::new(&cli.log)
-                .add_directive("kurrentdb::grpc=off".parse().unwrap())
+            EnvFilter::new(&cli.log).add_directive("kurrentdb::grpc=off".parse().unwrap()),
         )
         .init();
 
@@ -106,7 +109,14 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Commands::Run { store, workload, output, uri, option, seed } => {
+        Commands::Run {
+            store,
+            workload,
+            output,
+            uri,
+            option,
+            seed,
+        } => {
             // Load workload
             let wl = WorkloadFile::load(&workload)?;
             let adapter_name = store.to_lowercase();
@@ -123,9 +133,13 @@ fn main() -> Result<()> {
                 _ => String::new(),
             };
             let uri = uri.unwrap_or(default_uri);
-            let conn = ConnectionParams { uri, options: option.into_iter().collect() };
+            let conn = ConnectionParams {
+                uri,
+                options: option.into_iter().collect(),
+            };
 
-            let factory = factories.iter()
+            let factory = factories
+                .iter()
                 .find(|f| f.name() == adapter_name)
                 .ok_or_else(|| anyhow::anyhow!("unknown adapter: {}", adapter_name))?;
             let adapter: Arc<dyn bench_core::EventStoreAdapter> = factory.create().into();
@@ -136,14 +150,22 @@ fn main() -> Result<()> {
                 run_workload(
                     adapter,
                     wl,
-                    RunOptions { adapter_name: adapter_name_for_run, conn, seed },
-                ).await
+                    RunOptions {
+                        adapter_name: adapter_name_for_run,
+                        conn,
+                        seed,
+                    },
+                )
+                .await
             })?;
 
             // Write JSON summary and samples
             let summary_path = run_dir.join("summary.json");
             let samples_path = run_dir.join("samples.jsonl");
-            fs::write(&summary_path, serde_json::to_string_pretty(&result.summary)?)?;
+            fs::write(
+                &summary_path,
+                serde_json::to_string_pretty(&result.summary)?,
+            )?;
             // JSON Lines for samples
             let mut lines = String::new();
             for s in result.samples {
@@ -154,10 +176,14 @@ fn main() -> Result<()> {
 
             // Minimal Criterion-compatible marker file (for Python to find runs)
             let meta_path = run_dir.join("run.meta.json");
-            fs::write(&meta_path, json!({
-                "adapter": adapter_name,
-                "workload": workload.to_string_lossy(),
-            }).to_string())?;
+            fs::write(
+                &meta_path,
+                json!({
+                    "adapter": adapter_name,
+                    "workload": workload.to_string_lossy(),
+                })
+                .to_string(),
+            )?;
 
             println!("Run complete. Outputs written to {}", run_dir.display());
             Ok(())

@@ -19,9 +19,18 @@ impl Default for AxonServer {
     fn default() -> Self {
         Self {
             env_vars: vec![
-                ("AXONIQ_AXONSERVER_NAME".to_string(), "bench-axon-server".to_string()),
-                ("AXONIQ_AXONSERVER_HOSTNAME".to_string(), "bench-axon-server".to_string()),
-                ("AXONIQ_AXONSERVER_STANDALONE_DCB".to_string(), "true".to_string()),
+                (
+                    "AXONIQ_AXONSERVER_NAME".to_string(),
+                    "bench-axon-server".to_string(),
+                ),
+                (
+                    "AXONIQ_AXONSERVER_HOSTNAME".to_string(),
+                    "bench-axon-server".to_string(),
+                ),
+                (
+                    "AXONIQ_AXONSERVER_STANDALONE_DCB".to_string(),
+                    "true".to_string(),
+                ),
             ],
         }
     }
@@ -42,11 +51,13 @@ impl Image for AxonServer {
 
     fn env_vars(
         &self,
-    ) -> impl IntoIterator<Item = (impl Into<std::borrow::Cow<'_, str>>, impl Into<std::borrow::Cow<'_, str>>)>
-    {
-        self.env_vars
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
+    ) -> impl IntoIterator<
+        Item = (
+            impl Into<std::borrow::Cow<'_, str>>,
+            impl Into<std::borrow::Cow<'_, str>>,
+        ),
+    > {
+        self.env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str()))
     }
 
     fn expose_ports(&self) -> &[ContainerPort] {

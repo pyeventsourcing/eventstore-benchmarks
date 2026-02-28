@@ -38,15 +38,21 @@ pub struct ReadEvent {
 
 #[async_trait]
 pub trait EventStoreAdapter: Send + Sync {
-    async fn setup(&self) -> anyhow::Result<()> { Ok(()) }
-    async fn teardown(&self) -> anyhow::Result<()> { Ok(()) }
+    async fn setup(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn teardown(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     async fn connect(&self, params: &ConnectionParams) -> anyhow::Result<()>;
 
     async fn append(&self, evt: EventData) -> anyhow::Result<()>;
 
     async fn batch_append(&self, events: Vec<EventData>) -> anyhow::Result<()> {
-        for e in events { self.append(e).await?; }
+        for e in events {
+            self.append(e).await?;
+        }
         Ok(())
     }
 

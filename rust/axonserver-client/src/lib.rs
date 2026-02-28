@@ -38,11 +38,7 @@ impl AxonServerClient {
             condition: None,
             event: events,
         };
-        let response = self
-            .inner
-            .append(once(req))
-            .await?
-            .into_inner();
+        let response = self.inner.append(once(req)).await?.into_inner();
         Ok(response.sequence_of_the_first_event)
     }
 

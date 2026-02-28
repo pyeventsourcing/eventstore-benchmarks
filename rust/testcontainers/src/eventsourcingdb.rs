@@ -30,7 +30,14 @@ impl Image for EventsourcingDb {
         vec![]
     }
     fn cmd(&self) -> impl IntoIterator<Item = impl Into<std::borrow::Cow<'_, str>>> {
-        vec!["run", "--data-directory-temporary", "--https-enabled=false", "--http-enabled", "--api-token", EVENTSOURCINGDB_API_TOKEN]
+        vec![
+            "run",
+            "--data-directory-temporary",
+            "--https-enabled=false",
+            "--http-enabled",
+            "--api-token",
+            EVENTSOURCINGDB_API_TOKEN,
+        ]
     }
     fn expose_ports(&self) -> &[ContainerPort] {
         &[EVENTSOURCINGDB_PORT]

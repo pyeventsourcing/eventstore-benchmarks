@@ -30,6 +30,10 @@ impl EventStoreAdapter for DummyAdapter {
 
 pub struct DummyFactory;
 impl bench_core::AdapterFactory for DummyFactory {
-    fn name(&self) -> &'static str { "dummy" }
-    fn create(&self) -> Box<dyn EventStoreAdapter> { Box::new(DummyAdapter::new()) }
+    fn name(&self) -> &'static str {
+        "dummy"
+    }
+    fn create(&self) -> Box<dyn EventStoreAdapter> {
+        Box::new(DummyAdapter::new())
+    }
 }

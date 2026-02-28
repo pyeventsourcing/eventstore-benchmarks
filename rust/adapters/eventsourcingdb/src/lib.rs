@@ -1,14 +1,16 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
-use bench_testcontainers::eventsourcingdb::{EventsourcingDb, EVENTSOURCINGDB_PORT, EVENTSOURCINGDB_API_TOKEN};
+use bench_testcontainers::eventsourcingdb::{
+    EventsourcingDb, EVENTSOURCINGDB_API_TOKEN, EVENTSOURCINGDB_PORT,
+};
 use eventsourcingdb::client::Client;
 use eventsourcingdb::event::EventCandidate;
 use futures::StreamExt;
 use serde_json::json;
 use std::sync::Arc;
-use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
+use testcontainers::ContainerAsync;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use url::Url;
@@ -80,10 +82,9 @@ impl EventStoreAdapter for EventsourcingDbAdapter {
         } else {
             params.uri.clone()
         };
-        let api_token = params.options.get("api_token")
-            .cloned()
-            .unwrap_or_default();
-        let url: Url = base_url.parse()
+        let api_token = params.options.get("api_token").cloned().unwrap_or_default();
+        let url: Url = base_url
+            .parse()
             .map_err(|e| anyhow::anyhow!("invalid URL: {}", e))?;
         let client = Client::new(url, api_token);
         let mut guard = self.client.lock().await;
@@ -93,10 +94,11 @@ impl EventStoreAdapter for EventsourcingDbAdapter {
 
     async fn append(&self, evt: EventData) -> Result<()> {
         let client = self.get_client().await?;
-        let data: serde_json::Value = serde_json::from_slice(&evt.payload)
-            .unwrap_or_else(|_| json!({"raw": serde_json::Value::String(
+        let data: serde_json::Value = serde_json::from_slice(&evt.payload).unwrap_or_else(|_| {
+            json!({"raw": serde_json::Value::String(
                 String::from_utf8_lossy(&evt.payload).to_string()
-            )}));
+            )})
+        });
         let event = EventCandidate::builder()
             .source("https://bench.eventsourcingdb.io".to_string())
             .subject(format!("/{}", evt.stream))
@@ -107,7 +109,9 @@ impl EventStoreAdapter for EventsourcingDbAdapter {
             })
             .data(data)
             .build();
-        client.write_events(vec![event], vec![]).await
+        client
+            .write_events(vec![event], vec![])
+            .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         Ok(())
     }
@@ -115,7 +119,9 @@ impl EventStoreAdapter for EventsourcingDbAdapter {
     async fn read(&self, req: ReadRequest) -> Result<Vec<ReadEvent>> {
         let client = self.get_client().await?;
         let subject = format!("/{}", req.stream);
-        let mut stream = client.read_events(&subject, None).await
+        let mut stream = client
+            .read_events(&subject, None)
+            .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         let mut out = Vec::new();
         let mut offset: u64 = 0;
@@ -148,8 +154,7 @@ impl EventStoreAdapter for EventsourcingDbAdapter {
     async fn ping(&self) -> Result<Duration> {
         let client = self.get_client().await?;
         let t0 = std::time::Instant::now();
-        client.ping().await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        client.ping().await.map_err(|e| anyhow::anyhow!("{}", e))?;
         Ok(t0.elapsed())
     }
 }

@@ -4,8 +4,8 @@ use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadEv
 use bench_testcontainers::umadb::{UmaDb, UMADB_PORT};
 use futures::StreamExt;
 use std::sync::Arc;
-use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
+use testcontainers::ContainerAsync;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use umadb_client::UmaDBClient;
@@ -98,7 +98,9 @@ impl EventStoreAdapter for UmaDbAdapter {
         };
         let client_arc = {
             let guard = self.client.lock().await;
-            guard.clone().ok_or_else(|| anyhow::anyhow!("UmaDB client not connected"))?
+            guard
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("UmaDB client not connected"))?
         };
         let _pos: u64 = client_arc.append(vec![dcb_evt], None).await?;
         Ok(())
@@ -107,7 +109,9 @@ impl EventStoreAdapter for UmaDbAdapter {
     async fn read(&self, req: ReadRequest) -> Result<Vec<ReadEvent>> {
         let client_arc = {
             let guard = self.client.lock().await;
-            guard.clone().ok_or_else(|| anyhow::anyhow!("UmaDB client not connected"))?
+            guard
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("UmaDB client not connected"))?
         };
         let query = DCBQuery {
             items: vec![DCBQueryItem {
@@ -116,7 +120,13 @@ impl EventStoreAdapter for UmaDbAdapter {
             }],
         };
         let mut rr = client_arc
-            .read(Some(query), req.from_offset, false, req.limit.map(|l| l as u32), false)
+            .read(
+                Some(query),
+                req.from_offset,
+                false,
+                req.limit.map(|l| l as u32),
+                false,
+            )
             .await?;
         let mut out = Vec::new();
         let mut got: u64 = 0;
@@ -130,7 +140,11 @@ impl EventStoreAdapter for UmaDbAdapter {
                         timestamp_ms: 0,
                     });
                     got += 1;
-                    if let Some(lim) = req.limit { if got >= lim { break; } }
+                    if let Some(lim) = req.limit {
+                        if got >= lim {
+                            break;
+                        }
+                    }
                 }
                 Err(_status) => break,
             }
@@ -141,7 +155,9 @@ impl EventStoreAdapter for UmaDbAdapter {
     async fn ping(&self) -> Result<Duration> {
         let client_arc = {
             let guard = self.client.lock().await;
-            guard.clone().ok_or_else(|| anyhow::anyhow!("UmaDB client not connected"))?
+            guard
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("UmaDB client not connected"))?
         };
         let t0 = std::time::Instant::now();
         let _ = client_arc.head().await?;
@@ -151,6 +167,10 @@ impl EventStoreAdapter for UmaDbAdapter {
 
 pub struct UmaDbFactory;
 impl bench_core::AdapterFactory for UmaDbFactory {
-    fn name(&self) -> &'static str { "umadb" }
-    fn create(&self) -> Box<dyn EventStoreAdapter> { Box::new(UmaDbAdapter::new()) }
+    fn name(&self) -> &'static str {
+        "umadb"
+    }
+    fn create(&self) -> Box<dyn EventStoreAdapter> {
+        Box::new(UmaDbAdapter::new())
+    }
 }

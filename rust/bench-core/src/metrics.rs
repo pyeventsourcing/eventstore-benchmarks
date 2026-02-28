@@ -42,7 +42,9 @@ pub struct LatencyRecorder {
 
 impl LatencyRecorder {
     pub fn new() -> Self {
-        Self { hist: Histogram::new(3).expect("hist")} // 3 sigfigs
+        Self {
+            hist: Histogram::new(3).expect("hist"),
+        } // 3 sigfigs
     }
     pub fn record(&mut self, dur: Duration) {
         let us = dur.as_micros() as u64;
@@ -59,5 +61,8 @@ impl LatencyRecorder {
 }
 
 pub fn now_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
 }

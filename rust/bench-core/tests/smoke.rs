@@ -33,13 +33,19 @@ async fn run_workload_smoke() {
         duration_seconds: 1,
         writers: 2,
         event_size_bytes: 64,
-        streams: StreamsConfig { distribution: "uniform".to_string(), unique_streams: 100 },
+        streams: StreamsConfig {
+            distribution: "uniform".to_string(),
+            unique_streams: 100,
+        },
         conflict_rate: None,
         durability: None,
     };
     let opts = RunOptions {
         adapter_name: "dummy".to_string(),
-        conn: ConnectionParams { uri: String::new(), options: Default::default() },
+        conn: ConnectionParams {
+            uri: String::new(),
+            options: Default::default(),
+        },
         seed: 42,
     };
 

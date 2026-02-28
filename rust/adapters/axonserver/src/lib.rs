@@ -1,8 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use axonserver_client::proto::dcb::{
-    Criterion, Event, Tag, TaggedEvent, TagsAndNamesCriterion,
-};
+use axonserver_client::proto::dcb::{Criterion, Event, Tag, TaggedEvent, TagsAndNamesCriterion};
 use axonserver_client::AxonServerClient;
 use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
 use bench_testcontainers::axonserver::{AxonServer, AXONSERVER_GRPC_PORT};

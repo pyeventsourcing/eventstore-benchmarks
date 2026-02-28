@@ -2,12 +2,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
 use bench_testcontainers::kurrentdb::{KurrentDb, KURRENTDB_PORT};
-use kurrentdb::{
-    AppendToStreamOptions, Client, ClientSettings, ReadStreamOptions, StreamPosition,
-};
+use kurrentdb::{AppendToStreamOptions, Client, ClientSettings, ReadStreamOptions, StreamPosition};
 use std::sync::Arc;
-use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
+use testcontainers::ContainerAsync;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use uuid::Uuid;
@@ -92,12 +90,10 @@ impl EventStoreAdapter for KurrentDbAdapter {
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("KurrentDB client not connected"))?
         };
-        let event = kurrentdb::EventData::binary(evt.event_type, evt.payload.into())
-            .id(Uuid::new_v4());
+        let event =
+            kurrentdb::EventData::binary(evt.event_type, evt.payload.into()).id(Uuid::new_v4());
         let options = AppendToStreamOptions::default();
-        client
-            .append_to_stream(evt.stream, &options, event)
-            .await?;
+        client.append_to_stream(evt.stream, &options, event).await?;
         Ok(())
     }
 
@@ -143,12 +139,9 @@ impl EventStoreAdapter for KurrentDbAdapter {
         };
         let t0 = std::time::Instant::now();
         // Perform a test append to verify the node is leader and accepting writes
-        let event = kurrentdb::EventData::binary("ping", vec![].into())
-            .id(Uuid::new_v4());
+        let event = kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
         let options = AppendToStreamOptions::default();
-        client
-            .append_to_stream("_ping", &options, event)
-            .await?;
+        client.append_to_stream("_ping", &options, event).await?;
         Ok(t0.elapsed())
     }
 }

@@ -45,11 +45,13 @@ impl Image for KurrentDb {
 
     fn env_vars(
         &self,
-    ) -> impl IntoIterator<Item = (impl Into<std::borrow::Cow<'_, str>>, impl Into<std::borrow::Cow<'_, str>>)>
-    {
-        self.env_vars
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
+    ) -> impl IntoIterator<
+        Item = (
+            impl Into<std::borrow::Cow<'_, str>>,
+            impl Into<std::borrow::Cow<'_, str>>,
+        ),
+    > {
+        self.env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str()))
     }
 
     fn expose_ports(&self) -> &[ContainerPort] {
