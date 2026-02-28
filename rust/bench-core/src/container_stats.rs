@@ -1,6 +1,8 @@
 use anyhow::Result;
 use serde::Deserialize;
 use std::process::Command;
+use std::thread;
+use std::time::Duration as StdDuration;
 
 #[derive(Debug, Deserialize)]
 struct DockerImageInspect {
@@ -42,46 +44,75 @@ pub fn get_container_image_size(container_id: &str) -> Result<u64> {
     anyhow::bail!("Could not extract image size from docker image inspect")
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct DockerStats {
+    #[serde(rename = "CPUPerc")]
+    cpu_perc: String,
+    mem_usage: String,
+}
+
 #[derive(Debug)]
 pub struct ContainerStats {
     pub cpu_percent: f64,
     pub memory_bytes: u64,
 }
 
-/// Get current container stats using docker stats --no-stream
+/// Get current container stats using docker stats with JSON format
+/// Takes multiple samples to get accurate CPU measurements (Docker calculates CPU as deltas)
 pub fn get_container_stats(container_id: &str) -> Result<ContainerStats> {
-    let output = Command::new("docker")
-        .args(&[
-            "stats",
-            "--no-stream",
-            "--format",
-            "{{.CPUPerc}}|{{.MemUsage}}",
-            container_id,
-        ])
-        .output()?;
+    const NUM_SAMPLES: usize = 1;
+    const SAMPLE_DELAY_MS: u64 = 150;
 
-    if !output.status.success() {
-        anyhow::bail!("docker stats failed");
+    let mut cpu_samples = Vec::new();
+    let mut mem_samples = Vec::new();
+
+    // Take multiple samples for better accuracy
+    for i in 0..NUM_SAMPLES {
+        let output = Command::new("docker")
+            .args(&[
+                "stats",
+                "--no-stream",
+                "--format",
+                "{{json .}}",
+                container_id,
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            anyhow::bail!("docker stats failed");
+        }
+
+        let json_str = String::from_utf8(output.stdout)?;
+        let stats: DockerStats = serde_json::from_str(json_str.trim())?;
+
+        // Parse CPU percentage (format: "1.23%")
+        let cpu_str = stats.cpu_perc.trim().trim_end_matches('%');
+        if let Ok(cpu) = cpu_str.parse::<f64>() {
+            cpu_samples.push(cpu);
+        }
+
+        // Parse memory (format: "123.4MiB / 7.775GiB")
+        let mem_parts: Vec<&str> = stats.mem_usage.split('/').collect();
+        if !mem_parts.is_empty() {
+            if let Ok(mem_bytes) = parse_memory_size(mem_parts[0].trim()) {
+                mem_samples.push(mem_bytes);
+            }
+        }
+
+        if i < NUM_SAMPLES - 1 {
+            thread::sleep(StdDuration::from_millis(SAMPLE_DELAY_MS));
+        }
     }
 
-    let line = String::from_utf8(output.stdout)?;
-    let parts: Vec<&str> = line.trim().split('|').collect();
+    // Return average CPU and latest memory
+    let cpu_percent = if !cpu_samples.is_empty() {
+        cpu_samples.iter().sum::<f64>() / cpu_samples.len() as f64
+    } else {
+        0.0
+    };
 
-    if parts.len() != 2 {
-        anyhow::bail!("unexpected docker stats format");
-    }
-
-    // Parse CPU percentage (format: "1.23%")
-    let cpu_str = parts[0].trim().trim_end_matches('%');
-    let cpu_percent = cpu_str.parse::<f64>()?;
-
-    // Parse memory (format: "123.4MiB / 7.775GiB")
-    let mem_parts: Vec<&str> = parts[1].split('/').collect();
-    if mem_parts.is_empty() {
-        anyhow::bail!("unexpected memory format");
-    }
-
-    let memory_bytes = parse_memory_size(mem_parts[0].trim())?;
+    let memory_bytes = mem_samples.last().copied().unwrap_or(0);
 
     Ok(ContainerStats {
         cpu_percent,

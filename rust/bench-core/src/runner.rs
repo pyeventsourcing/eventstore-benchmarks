@@ -35,6 +35,29 @@ pub async fn run_workload(
     let samples = Arc::new(Mutex::new(Vec::<RawSample>::with_capacity(100_000)));
     let mut set = JoinSet::new();
 
+    // Start a background task to periodically collect container stats during the workload
+    let adapter_for_stats = adapter.clone();
+    let stats_handle = tokio::spawn(async move {
+        let mut cpu_samples = Vec::new();
+        let mut mem_samples = Vec::new();
+
+        // Start sampling immediately as workload begins
+        while Instant::now() < end_at {
+            if let Ok(metrics) = adapter_for_stats.collect_container_metrics().await {
+                if let Some(cpu) = metrics.avg_cpu_percent {
+                    cpu_samples.push(cpu);
+                }
+                if let Some(mem) = metrics.avg_memory_bytes {
+                    mem_samples.push(mem);
+                }
+            }
+            // Sample every 1 second to capture short workloads
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+
+        (cpu_samples, mem_samples)
+    });
+
     for i in 0..wl.writers {
         let adapter = adapter.clone();
         let samples = samples.clone();
@@ -84,9 +107,28 @@ pub async fn run_workload(
         events_written += rec.hist.len() as u64;
     }
 
-    // Collect container metrics
+    // Wait for stats collection to finish
+    let (cpu_samples, mem_samples) = stats_handle.await.unwrap_or_default();
+
+    // Collect final container metrics (for image size)
     let mut container_metrics = adapter.collect_container_metrics().await.unwrap_or_default();
     container_metrics.startup_time_s = startup_time_s;
+
+    // Compute CPU and memory statistics from samples collected during workload
+    // Average gives overall resource usage, peak shows maximum demand
+    if !cpu_samples.is_empty() {
+        let avg_cpu = cpu_samples.iter().sum::<f64>() / cpu_samples.len() as f64;
+        let peak_cpu = cpu_samples.iter().copied().fold(0.0f64, f64::max);
+        container_metrics.avg_cpu_percent = Some(avg_cpu);
+        container_metrics.peak_cpu_percent = Some(peak_cpu);
+    }
+
+    if !mem_samples.is_empty() {
+        let avg_mem = mem_samples.iter().sum::<u64>() / mem_samples.len() as u64;
+        let peak_mem = *mem_samples.iter().max().unwrap_or(&0);
+        container_metrics.avg_memory_bytes = Some(avg_mem);
+        container_metrics.peak_memory_bytes = Some(peak_mem);
+    }
 
     let dur_s = wl.duration_seconds as f64;
     let summary = Summary {

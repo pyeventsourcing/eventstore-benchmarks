@@ -217,8 +217,24 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
         container = s.get("container", {})
         startup_time = f"{container.get('startup_time_s', 0):.1f}s" if container.get("startup_time_s") else "N/A"
         image_size_mb = f"{container.get('image_size_bytes', 0) / 1024 / 1024:.0f}" if container.get("image_size_bytes") else "N/A"
-        avg_cpu = f"{container.get('avg_cpu_percent', 0):.1f}%" if container.get("avg_cpu_percent") else "N/A"
-        avg_mem_mb = f"{container.get('avg_memory_bytes', 0) / 1024 / 1024:.0f}" if container.get("avg_memory_bytes") else "N/A"
+
+        # CPU metrics (avg / peak)
+        avg_cpu = container.get("avg_cpu_percent")
+        peak_cpu = container.get("peak_cpu_percent")
+        cpu_display = "N/A"
+        if avg_cpu is not None and peak_cpu is not None:
+            cpu_display = f"{avg_cpu:.1f}% / {peak_cpu:.1f}%"
+        elif avg_cpu is not None:
+            cpu_display = f"{avg_cpu:.1f}%"
+
+        # Memory metrics (avg / peak in MB)
+        avg_mem = container.get("avg_memory_bytes")
+        peak_mem = container.get("peak_memory_bytes")
+        mem_display = "N/A"
+        if avg_mem is not None and peak_mem is not None:
+            mem_display = f"{avg_mem / 1024 / 1024:.0f} / {peak_mem / 1024 / 1024:.0f}"
+        elif avg_mem is not None:
+            mem_display = f"{avg_mem / 1024 / 1024:.0f}"
 
         summary_rows += f"""
       <tr>
@@ -231,8 +247,8 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
         <td>{s['latency']['p99_ms']:.2f}</td>
         <td>{image_size_mb}</td>
         <td>{startup_time}</td>
-        <td>{avg_cpu}</td>
-        <td>{avg_mem_mb}</td>
+        <td>{cpu_display}</td>
+        <td>{mem_display}</td>
       </tr>"""
 
     # Per-writer-count comparison sections
@@ -287,7 +303,7 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
   <h1>ESBS Consolidated Report</h1>
   <h2>Summary</h2>
   <table>
-    <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th><th>p50 (ms)</th><th>p99 (ms)</th><th>Image (MB)</th><th>Startup</th><th>Avg CPU</th><th>Avg Mem (MB)</th></tr>
+    <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th><th>p50 (ms)</th><th>p99 (ms)</th><th>Image (MB)</th><th>Startup</th><th>CPU (avg/peak)</th><th>Mem MB (avg/peak)</th></tr>
     {summary_rows}
   </table>
   {scaling_section}
