@@ -51,7 +51,7 @@ jobs:
           for store in umadb kurrentdb axonserver eventsourcingdb; do
             printf "| %s " "$store" >> $GITHUB_STEP_SUMMARY
             for w in 1 2 4 8 16; do
-              json_file=$(find results/raw -type f -name "summary.json" | xargs grep -l "\"adapter\": \"$store\"" | xargs grep -l "\"writers\": $w" | head -1)
+              json_file=$(find results/raw -type f -name "summary.json" -exec sh -c 'jq -e ".adapter == \"'$store'\" and .writers == '$w'" "$1" > /dev/null 2>&1 && echo "$1"' _ {} \; | head -1)
               if [ -n "$json_file" ] && [ -f "$json_file" ]; then
                 throughput=$(jq -r '.throughput_eps' "$json_file" | xargs printf "%.0f")
                 printf "| %s eps " "$throughput" >> $GITHUB_STEP_SUMMARY
@@ -74,7 +74,7 @@ jobs:
           for store in umadb kurrentdb axonserver eventsourcingdb; do
             printf "| %s " "$store" >> $GITHUB_STEP_SUMMARY
             for w in 1 2 4 8 16; do
-              json_file=$(find results/raw -type f -name "summary.json" | xargs grep -l "\"adapter\": \"$store\"" | xargs grep -l "\"writers\": $w" | head -1)
+              json_file=$(find results/raw -type f -name "summary.json" -exec sh -c 'jq -e ".adapter == \"'$store'\" and .writers == '$w'" "$1" > /dev/null 2>&1 && echo "$1"' _ {} \; | head -1)
               if [ -n "$json_file" ] && [ -f "$json_file" ]; then
                 p99=$(jq -r '.latency.p99_ms' "$json_file" | xargs printf "%.2f")
                 printf "| %s ms " "$p99" >> $GITHUB_STEP_SUMMARY
@@ -95,7 +95,7 @@ jobs:
 
           # Extract container metrics for 16 writers
           for store in umadb kurrentdb axonserver eventsourcingdb; do
-            json_file=$(find results/raw -type f -name "summary.json" | xargs grep -l "\"adapter\": \"$store\"" | xargs grep -l "\"writers\": 16" | head -1)
+            json_file=$(find results/raw -type f -name "summary.json" -exec sh -c 'jq -e ".adapter == \"'$store'\" and .writers == 16" "$1" > /dev/null 2>&1 && echo "$1"' _ {} \; | head -1)
             if [ -n "$json_file" ] && [ -f "$json_file" ]; then
               image_mb=$(jq -r '.container.image_size_bytes / 1024 / 1024' "$json_file" | xargs printf "%.0f")
               startup=$(jq -r '.container.startup_time_s' "$json_file" | xargs printf "%.2f")
