@@ -212,6 +212,14 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
         workload = Path(s["workload"]).stem
         writers = s.get("writers", "?")
         report_link = f"report-{adapter}-{workload}/index.html"
+
+        # Get container metrics
+        container = s.get("container", {})
+        startup_time = f"{container.get('startup_time_s', 0):.1f}s" if container.get("startup_time_s") else "N/A"
+        image_size_mb = f"{container.get('image_size_bytes', 0) / 1024 / 1024:.0f}" if container.get("image_size_bytes") else "N/A"
+        avg_cpu = f"{container.get('avg_cpu_percent', 0):.1f}%" if container.get("avg_cpu_percent") else "N/A"
+        avg_mem_mb = f"{container.get('avg_memory_bytes', 0) / 1024 / 1024:.0f}" if container.get("avg_memory_bytes") else "N/A"
+
         summary_rows += f"""
       <tr>
         <td><a href='{report_link}'>{adapter}</a></td>
@@ -221,6 +229,10 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
         <td>{s['throughput_eps']:.0f}</td>
         <td>{s['latency']['p50_ms']:.2f}</td>
         <td>{s['latency']['p99_ms']:.2f}</td>
+        <td>{image_size_mb}</td>
+        <td>{startup_time}</td>
+        <td>{avg_cpu}</td>
+        <td>{avg_mem_mb}</td>
       </tr>"""
 
     # Per-writer-count comparison sections
@@ -275,7 +287,7 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
   <h1>ESBS Consolidated Report</h1>
   <h2>Summary</h2>
   <table>
-    <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th><th>p50 (ms)</th><th>p99 (ms)</th></tr>
+    <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th><th>p50 (ms)</th><th>p99 (ms)</th><th>Image (MB)</th><th>Startup</th><th>Avg CPU</th><th>Avg Mem (MB)</th></tr>
     {summary_rows}
   </table>
   {scaling_section}

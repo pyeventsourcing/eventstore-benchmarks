@@ -18,6 +18,22 @@ pub struct LatencyStats {
     pub p999_ms: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ContainerMetrics {
+    /// Container image size in bytes
+    pub image_size_bytes: Option<u64>,
+    /// Time to start the container in seconds
+    pub startup_time_s: f64,
+    /// Average CPU usage percentage during workload
+    pub avg_cpu_percent: Option<f64>,
+    /// Peak CPU usage percentage during workload
+    pub peak_cpu_percent: Option<f64>,
+    /// Average memory usage in bytes during workload
+    pub avg_memory_bytes: Option<u64>,
+    /// Peak memory usage in bytes during workload
+    pub peak_memory_bytes: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Summary {
     pub workload: String,
@@ -28,6 +44,8 @@ pub struct Summary {
     pub duration_s: f64,
     pub throughput_eps: f64,
     pub latency: LatencyStats,
+    #[serde(default)]
+    pub container: ContainerMetrics,
 }
 
 #[derive(Debug, Clone, Serialize)]

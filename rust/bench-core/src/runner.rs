@@ -21,12 +21,13 @@ pub async fn run_workload(
     opts: RunOptions,
 ) -> Result<RunMetrics> {
     println!("Starting {} container...", opts.adapter_name);
-    let start_time = std::time::Instant::now();
+    let setup_start = std::time::Instant::now();
     adapter.setup().await?;
+    let startup_time_s = setup_start.elapsed().as_secs_f64();
     println!(
-        "{} container is ready after {} seconds",
+        "{} container is ready after {:.2} seconds",
         opts.adapter_name,
-        start_time.elapsed().as_secs()
+        startup_time_s
     );
 
     let end_at = Instant::now() + Duration::from_secs(wl.duration_seconds);
@@ -83,6 +84,10 @@ pub async fn run_workload(
         events_written += rec.hist.len() as u64;
     }
 
+    // Collect container metrics
+    let mut container_metrics = adapter.collect_container_metrics().await.unwrap_or_default();
+    container_metrics.startup_time_s = startup_time_s;
+
     let dur_s = wl.duration_seconds as f64;
     let summary = Summary {
         workload: wl.name,
@@ -93,6 +98,7 @@ pub async fn run_workload(
         duration_s: dur_s,
         throughput_eps: (events_written as f64) / dur_s.max(0.001),
         latency: overall.to_stats(),
+        container: container_metrics,
     };
 
     let samples_vec = samples.lock().await.clone();

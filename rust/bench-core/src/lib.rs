@@ -1,4 +1,5 @@
 pub mod adapter;
+pub mod container_stats;
 pub mod metrics;
 pub mod runner;
 pub mod workload;

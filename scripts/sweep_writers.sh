@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WRITERS=(1 2 4 8 16 32)
+#WRITERS=(1 2 4 8 16 32)
+WRITERS=(1 8 32)
 #WRITERS=(1 2)
 STORES=("umadb" "kurrentdb" "axonserver" "eventsourcingdb")
 WORKLOAD_TEMPLATE="workloads/concurrent_writers.yaml"

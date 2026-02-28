@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
+use crate::metrics::ContainerMetrics;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionParams {
@@ -59,6 +60,13 @@ pub trait EventStoreAdapter: Send + Sync {
     async fn read(&self, req: ReadRequest) -> anyhow::Result<Vec<ReadEvent>>;
 
     async fn ping(&self) -> anyhow::Result<Duration>;
+
+    /// Collect container metrics (image size, CPU, memory).
+    /// Returns ContainerMetrics with available data. Adapters that don't use containers
+    /// can return default/empty metrics.
+    async fn collect_container_metrics(&self) -> anyhow::Result<ContainerMetrics> {
+        Ok(ContainerMetrics::default())
+    }
 }
 
 pub trait AdapterFactory: Send + Sync {
