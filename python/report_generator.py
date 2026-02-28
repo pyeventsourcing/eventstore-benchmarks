@@ -138,14 +138,48 @@ def plot_comparison_throughput(run_data, title, out_path: Path):
 
 
 def plot_throughput_scaling(runs, out_path: Path):
-    """Plot throughput vs writer count, one line per adapter."""
+    """Plot throughput vs writer count, one line per adapter.
+
+    Computes throughput from raw samples, filtering by 'ok' status and
+    excluding first and last time groups to avoid warm-up/cool-down artifacts.
+    """
     # Group by adapter → list of (writers, throughput)
     adapter_data = defaultdict(list)
+
     for run in runs:
         s = run["summary"]
         adapter = s["adapter"]
         writers = s.get("writers", 1)
-        throughput = s["throughput_eps"]
+
+        # Compute throughput from raw samples for better accuracy
+        samples_df = pd.DataFrame(run["samples"])
+
+        # Filter by ok=true
+        ok_samples = samples_df[samples_df["ok"] == True].copy()
+
+        if len(ok_samples) == 0:
+            continue
+
+        # Convert to datetime and group by finer intervals (50ms for more granularity)
+        ok_samples["timestamp"] = pd.to_datetime(ok_samples["t_ms"], unit="ms")
+        ok_samples = ok_samples.set_index("timestamp")
+
+        # Group by 50ms intervals
+        grp = ok_samples.resample("50ms").size()
+
+        # Drop first and last groups to avoid warm-up/cool-down artifacts
+        if len(grp) > 2:
+            grp = grp.iloc[1:-1]
+
+        if len(grp) == 0:
+            continue
+
+        # Convert to events/sec (50ms → 20 samples per second)
+        eps = grp * 20
+
+        # Use median throughput for more robust estimate
+        throughput = eps.median()
+
         adapter_data[adapter].append((writers, throughput))
 
     plt.figure(figsize=(8, 5))
@@ -154,15 +188,19 @@ def plot_throughput_scaling(runs, out_path: Path):
         ws = [p[0] for p in points]
         tps = [p[1] for p in points]
         color = get_adapter_color(adapter)
-        plt.plot(ws, tps, marker="o", label=adapter, color=color, linewidth=2, markersize=8)
+
+        # Plot with smoother line interpolation
+        plt.plot(ws, tps, marker="o", label=adapter, color=color,
+                linewidth=2.5, markersize=8, linestyle='-', alpha=0.9)
+
     plt.xlabel("Writers")
     plt.ylabel("Throughput (events/sec)")
     plt.title("Throughput Scaling by Writer Count")
     plt.legend()
-    plt.grid(True, ls=":")
+    plt.grid(True, ls=":", alpha=0.6)
     plt.xticks(sorted({s["summary"].get("writers", 1) for s in runs}))
     plt.tight_layout()
-    plt.savefig(out_path)
+    plt.savefig(out_path, dpi=150)
     plt.close()
 
 
