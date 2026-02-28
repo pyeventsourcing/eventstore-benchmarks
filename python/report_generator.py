@@ -164,6 +164,95 @@ def plot_p99_scaling(runs, out_path: Path):
     plt.close()
 
 
+def plot_container_metrics(runs, out_path: Path):
+    """Create a dramatic visualization of container resource usage."""
+    # Collect data for each adapter
+    adapters = []
+    image_sizes = []
+    startup_times = []
+    peak_cpus = []
+    peak_mems = []
+
+    for run in runs:
+        s = run["summary"]
+        container = s.get("container", {})
+
+        # Only include if we have meaningful data
+        if container.get("image_size_bytes") or container.get("peak_cpu_percent"):
+            adapters.append(s["adapter"])
+
+            # Image size in MB
+            image_size = container.get("image_size_bytes", 0) / (1024 * 1024)
+            image_sizes.append(image_size)
+
+            # Startup time in seconds
+            startup_times.append(container.get("startup_time_s", 0))
+
+            # Peak CPU percentage
+            peak_cpus.append(container.get("peak_cpu_percent", 0))
+
+            # Peak memory in MB
+            peak_mem = container.get("peak_memory_bytes", 0) / (1024 * 1024)
+            peak_mems.append(peak_mem)
+
+    if not adapters:
+        return
+
+    # Create a 2x2 subplot for dramatic effect
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle("Container Resource Metrics Comparison", fontsize=16, fontweight='bold')
+
+    colors = plt.cm.Set3(np.linspace(0, 1, len(adapters)))
+
+    # 1. Image Size - Horizontal bar chart (more dramatic)
+    y_pos = np.arange(len(adapters))
+    ax1.barh(y_pos, image_sizes, color=colors)
+    ax1.set_yticks(y_pos)
+    ax1.set_yticklabels(adapters)
+    ax1.set_xlabel("Image Size (MB)", fontweight='bold')
+    ax1.set_title("Container Image Size", fontweight='bold')
+    ax1.grid(True, alpha=0.3, axis='x')
+    # Add value labels
+    for i, v in enumerate(image_sizes):
+        ax1.text(v + max(image_sizes) * 0.01, i, f'{v:.0f}', va='center', fontweight='bold')
+
+    # 2. Startup Time - Horizontal bar chart
+    ax2.barh(y_pos, startup_times, color=colors)
+    ax2.set_yticks(y_pos)
+    ax2.set_yticklabels(adapters)
+    ax2.set_xlabel("Startup Time (seconds)", fontweight='bold')
+    ax2.set_title("Container Startup Time", fontweight='bold')
+    ax2.grid(True, alpha=0.3, axis='x')
+    for i, v in enumerate(startup_times):
+        ax2.text(v + max(startup_times) * 0.01, i, f'{v:.2f}s', va='center', fontweight='bold')
+
+    # 3. Peak CPU - Vertical bar chart with gradient effect
+    bars3 = ax3.bar(adapters, peak_cpus, color=colors, edgecolor='black', linewidth=1.5)
+    ax3.set_ylabel("Peak CPU (%)", fontweight='bold')
+    ax3.set_title("Peak CPU Usage", fontweight='bold')
+    ax3.grid(True, alpha=0.3, axis='y')
+    ax3.set_xticklabels(adapters, rotation=45, ha='right')
+    for bar, v in zip(bars3, peak_cpus):
+        height = bar.get_height()
+        ax3.text(bar.get_x() + bar.get_width()/2., height,
+                f'{v:.1f}%', ha='center', va='bottom', fontweight='bold')
+
+    # 4. Peak Memory - Vertical bar chart
+    bars4 = ax4.bar(adapters, peak_mems, color=colors, edgecolor='black', linewidth=1.5)
+    ax4.set_ylabel("Peak Memory (MB)", fontweight='bold')
+    ax4.set_title("Peak Memory Usage", fontweight='bold')
+    ax4.grid(True, alpha=0.3, axis='y')
+    ax4.set_xticklabels(adapters, rotation=45, ha='right')
+    for bar, v in zip(bars4, peak_mems):
+        height = bar.get_height()
+        ax4.text(bar.get_x() + bar.get_width()/2., height,
+                f'{v:.0f}', ha='center', va='bottom', fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
 def generate_html(report_dir: Path, run):
     summary = run["summary"]
     latency_img = report_dir / "latency_cdf.png"
@@ -267,6 +356,13 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
       </div>
     </div>"""
 
+    # Container metrics section
+    container_section = """
+    <h2>Container Resource Metrics</h2>
+    <div class='card' style='max-width: 100%;'>
+      <img src='container_metrics.png' style='width: 100%; max-width: 1200px;'>
+    </div>"""
+
     # Scaling charts (only if multiple writer counts)
     scaling_section = ""
     if len(writer_groups) > 1:
@@ -306,6 +402,7 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
     <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th><th>p50 (ms)</th><th>p99 (ms)</th><th>Image (MB)</th><th>Startup</th><th>CPU (avg/peak)</th><th>Mem MB (avg/peak)</th></tr>
     {summary_rows}
   </table>
+  {container_section}
   {scaling_section}
   {comparison_sections}
 </body>
@@ -382,6 +479,9 @@ def main():
     if len(writer_groups) > 1:
         plot_throughput_scaling(runs, out_base / "scaling_throughput.png")
         plot_p99_scaling(runs, out_base / "scaling_p99.png")
+
+    # Generate container metrics visualization
+    plot_container_metrics(runs, out_base / "container_metrics.png")
 
     generate_consolidated_html(out_base, runs, writer_groups)
     print(f"Consolidated report written to {out_base}/index.html")
