@@ -10,6 +10,19 @@ import seaborn as sns
 
 sns.set_theme(style="whitegrid")
 
+# Consistent color scheme for all adapters across all plots
+# Using standard data visualization colors for better clarity
+ADAPTER_COLORS = {
+    'umadb': '#d62728',        # Red
+    'kurrentdb': '#1f77b4',    # Blue
+    'axonserver': '#2ca02c',   # Green
+    'eventsourcingdb': '#ff7f0e',  # Orange
+}
+
+def get_adapter_color(adapter_name):
+    """Get consistent color for an adapter."""
+    return ADAPTER_COLORS.get(adapter_name, '#cccccc')
+
 
 def load_runs(raw_dir: Path):
     runs = []
@@ -76,7 +89,8 @@ def plot_comparison_latency_cdf(run_data, title, out_path: Path):
         lat_ms = lat_ms.clip(lower=1e-3)
         lat_sorted = np.sort(lat_ms.values)
         p = np.linspace(0, 100, len(lat_sorted), endpoint=False)
-        plt.plot(lat_sorted, p, label=label)
+        color = get_adapter_color(label)
+        plt.plot(lat_sorted, p, label=label, color=color, linewidth=2)
     plt.xscale("log")
     plt.xlabel("Latency (ms) [log]")
     plt.ylabel("Percentile (%)")
@@ -98,7 +112,8 @@ def plot_comparison_throughput(run_data, title, out_path: Path):
         df["bucket"] = (df["t_rel_ms"] // 100).astype(int)
         grp = df.groupby("bucket")["ok"].apply(lambda x: int(x.sum()))
         eps = grp * 10
-        plt.plot(eps.index.values / 10.0, eps.values, label=label)
+        color = get_adapter_color(label)
+        plt.plot(eps.index.values / 10.0, eps.values, label=label, color=color, linewidth=2)
     plt.xlabel("Time (s)")
     plt.ylabel("Events/sec")
     plt.title(title)
@@ -125,7 +140,8 @@ def plot_throughput_scaling(runs, out_path: Path):
         points.sort()
         ws = [p[0] for p in points]
         tps = [p[1] for p in points]
-        plt.plot(ws, tps, marker="o", label=adapter)
+        color = get_adapter_color(adapter)
+        plt.plot(ws, tps, marker="o", label=adapter, color=color, linewidth=2, markersize=8)
     plt.xlabel("Writers")
     plt.ylabel("Throughput (events/sec)")
     plt.title("Throughput Scaling by Writer Count")
@@ -152,7 +168,8 @@ def plot_p99_scaling(runs, out_path: Path):
         points.sort()
         ws = [p[0] for p in points]
         p99s = [p[1] for p in points]
-        plt.plot(ws, p99s, marker="o", label=adapter)
+        color = get_adapter_color(adapter)
+        plt.plot(ws, p99s, marker="o", label=adapter, color=color, linewidth=2, markersize=8)
     plt.xlabel("Writers")
     plt.ylabel("p99 Latency (ms)")
     plt.title("p99 Latency Scaling by Writer Count")
@@ -198,10 +215,39 @@ def plot_container_metrics(runs, out_path: Path):
     if not adapter_data:
         return
 
-    # Extract lists for plotting
-    adapters = sorted(adapter_data.keys())
+    # Create a composite score for ordering (lower is better):
+    # Normalize each metric to 0-1 range, then compute weighted average
+    adapters_list = list(adapter_data.keys())
+
+    # Get raw values
+    raw_image = [adapter_data[a]["image_size"] for a in adapters_list]
+    raw_startup = [adapter_data[a]["startup_time"] / adapter_data[a]["count"] for a in adapters_list]
+    raw_cpu = [adapter_data[a]["peak_cpu"] for a in adapters_list]
+    raw_mem = [adapter_data[a]["peak_mem"] for a in adapters_list]
+
+    # Normalize to 0-1 range (avoiding division by zero)
+    def normalize(values):
+        max_val = max(values) if values else 1
+        return [v / max_val if max_val > 0 else 0 for v in values]
+
+    norm_image = normalize(raw_image)
+    norm_startup = normalize(raw_startup)
+    norm_cpu = normalize(raw_cpu)
+    norm_mem = normalize(raw_mem)
+
+    # Compute composite score (equal weights, lower is better)
+    composite_scores = []
+    for i, adapter in enumerate(adapters_list):
+        score = (norm_image[i] + norm_startup[i] + norm_cpu[i] + norm_mem[i]) / 4.0
+        composite_scores.append((adapter, score))
+
+    # Sort by composite score (best first)
+    composite_scores.sort(key=lambda x: x[1])
+    adapters = [x[0] for x in composite_scores]
+
+    # Extract ordered lists for plotting
     image_sizes = [adapter_data[a]["image_size"] for a in adapters]
-    startup_times = [adapter_data[a]["startup_time"] / adapter_data[a]["count"] for a in adapters]  # Average
+    startup_times = [adapter_data[a]["startup_time"] / adapter_data[a]["count"] for a in adapters]
     peak_cpus = [adapter_data[a]["peak_cpu"] for a in adapters]
     peak_mems = [adapter_data[a]["peak_mem"] for a in adapters]
 
@@ -209,7 +255,8 @@ def plot_container_metrics(runs, out_path: Path):
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle("Container Resource Metrics Comparison", fontsize=16, fontweight='bold')
 
-    colors = plt.cm.Set3(np.linspace(0, 1, len(adapters)))
+    # Use consistent colors across all plots
+    colors = [get_adapter_color(adapter) for adapter in adapters]
 
     # 1. Image Size - Vertical bar chart
     bars1 = ax1.bar(adapters, image_sizes, color=colors, edgecolor='black', linewidth=1.5)
@@ -404,14 +451,14 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
 </head>
 <body>
   <h1>ESBS Consolidated Report</h1>
+  {container_section}
+  {scaling_section}
+  {comparison_sections}
   <h2>Summary</h2>
   <table>
     <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th><th>p50 (ms)</th><th>p99 (ms)</th><th>Image (MB)</th><th>Startup</th><th>CPU (avg/peak)</th><th>Mem MB (avg/peak)</th></tr>
     {summary_rows}
   </table>
-  {container_section}
-  {scaling_section}
-  {comparison_sections}
 </body>
 </html>
 """

@@ -20,9 +20,12 @@ pub async fn run_workload(
     wl: Workload,
     opts: RunOptions,
 ) -> Result<RunMetrics> {
+    // Start container.
     println!("Starting {} container...", opts.adapter_name);
     let setup_start = std::time::Instant::now();
+
     adapter.setup().await?;
+
     let startup_time_s = setup_start.elapsed().as_secs_f64();
     println!(
         "{} container is ready after {:.2} seconds",
@@ -30,7 +33,16 @@ pub async fn run_workload(
         startup_time_s
     );
 
-    let end_at = Instant::now() + Duration::from_secs(wl.duration_seconds);
+    // Add 1s warmup + 1s cooldown to the actual run time
+    // This prevents startup glitches and incomplete final buckets in plots
+    let warmup_duration = Duration::from_secs(1);
+    let cooldown_duration = Duration::from_secs(1);
+    let total_run_duration = Duration::from_secs(wl.duration_seconds) + warmup_duration + cooldown_duration;
+
+    let start_at = Instant::now();
+    let measurement_start = start_at + warmup_duration;
+    let measurement_end = measurement_start + Duration::from_secs(wl.duration_seconds);
+    let end_at = start_at + total_run_duration;
 
     let samples = Arc::new(Mutex::new(Vec::<RawSample>::with_capacity(100_000)));
     let mut set = JoinSet::new();
@@ -58,6 +70,7 @@ pub async fn run_workload(
         (cpu_samples, mem_samples)
     });
 
+    // Start one client per writer
     for i in 0..wl.writers {
         let adapter = adapter.clone();
         let samples = samples.clone();
@@ -86,14 +99,19 @@ pub async fn run_workload(
                 let t0 = Instant::now();
                 let ok = adapter.append(evt).await.is_ok();
                 let dt = t0.elapsed();
-                rec.record(dt);
-                let mut s = samples.lock().await;
-                s.push(RawSample {
-                    t_ms: now_ms(),
-                    op: "append".to_string(),
-                    latency_us: dt.as_micros() as u64,
-                    ok,
-                });
+                let now = Instant::now();
+
+                // Only record samples during the measurement window (after warmup, before cooldown)
+                if now >= measurement_start && now <= measurement_end {
+                    rec.record(dt);
+                    let mut s = samples.lock().await;
+                    s.push(RawSample {
+                        t_ms: now_ms(),
+                        op: "append".to_string(),
+                        latency_us: dt.as_micros() as u64,
+                        ok,
+                    });
+                }
             }
             rec
         });
