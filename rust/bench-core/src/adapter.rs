@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
-use crate::metrics::ContainerMetrics;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionParams {
@@ -37,17 +36,26 @@ pub struct ReadEvent {
     pub timestamp_ms: u64,
 }
 
+/// Manages the lifecycle of a database container
+/// Separate from the client adapters to allow multiple clients to connect to one container
+#[async_trait]
+pub trait ContainerManager: Send + Sync {
+    /// Start the container and return connection parameters for clients
+    async fn start(&mut self) -> anyhow::Result<ConnectionParams>;
+
+    /// Stop and cleanup the container
+    async fn stop(&mut self) -> anyhow::Result<()>;
+
+    /// Get the container ID for stats collection (if applicable)
+    fn container_id(&self) -> Option<String> {
+        None
+    }
+}
+
+/// Lightweight adapter - just wraps a client connection
+/// Multiple instances can be created to connect to the same server/container
 #[async_trait]
 pub trait EventStoreAdapter: Send + Sync {
-    async fn setup(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn teardown(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    async fn connect(&self, params: &ConnectionParams) -> anyhow::Result<()>;
-
     async fn append(&self, evt: EventData) -> anyhow::Result<()>;
 
     async fn batch_append(&self, events: Vec<EventData>) -> anyhow::Result<()> {
@@ -60,16 +68,18 @@ pub trait EventStoreAdapter: Send + Sync {
     async fn read(&self, req: ReadRequest) -> anyhow::Result<Vec<ReadEvent>>;
 
     async fn ping(&self) -> anyhow::Result<Duration>;
-
-    /// Collect container metrics (image size, CPU, memory).
-    /// Returns ContainerMetrics with available data. Adapters that don't use containers
-    /// can return default/empty metrics.
-    async fn collect_container_metrics(&self) -> anyhow::Result<ContainerMetrics> {
-        Ok(ContainerMetrics::default())
-    }
 }
 
+/// Creates adapter instances (clients) and optionally provides a container manager
 pub trait AdapterFactory: Send + Sync {
     fn name(&self) -> &'static str;
-    fn create(&self) -> Box<dyn EventStoreAdapter>;
+
+    /// Create a new adapter instance connected to the given params
+    fn create(&self, params: &ConnectionParams) -> anyhow::Result<Box<dyn EventStoreAdapter>>;
+
+    /// Create a container manager if this adapter uses containers
+    /// Returns None for adapters that connect to external servers
+    fn create_container_manager(&self) -> Option<Box<dyn ContainerManager>> {
+        None
+    }
 }

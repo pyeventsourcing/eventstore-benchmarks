@@ -1,4 +1,5 @@
-use crate::adapter::{ConnectionParams, EventData, EventStoreAdapter};
+use crate::adapter::{AdapterFactory, ConnectionParams, ContainerManager, EventData, EventStoreAdapter};
+use crate::{container_stats, metrics::ContainerMetrics};
 use crate::metrics::{now_ms, LatencyRecorder, RawSample, RunMetrics, Summary};
 use crate::workload::Workload;
 use anyhow::Result;
@@ -16,35 +17,46 @@ pub struct RunOptions {
 }
 
 pub async fn run_workload(
-    adapter: Arc<dyn EventStoreAdapter>,
+    factory: Arc<dyn AdapterFactory>,
     wl: Workload,
     opts: RunOptions,
 ) -> Result<RunMetrics> {
-    let shared_adapter = adapter;
+    // Start container if this adapter uses one
+    let mut container_manager: Option<Box<dyn ContainerManager>> = factory.create_container_manager();
+    let (conn_params, startup_time_s) = if let Some(ref mut cm) = container_manager {
+        println!("Starting {} container...", opts.adapter_name);
+        let setup_start = Instant::now();
 
-    // Start container.
-    println!("Starting {} container...", opts.adapter_name);
-    let setup_start = std::time::Instant::now();
+        let params = cm.start().await?;
 
-    shared_adapter.setup().await?;
+        let startup_time = setup_start.elapsed().as_secs_f64();
+        println!(
+            "{} container is ready after {:.2} seconds",
+            opts.adapter_name,
+            startup_time
+        );
+        (params, startup_time)
+    } else {
+        // No container - use provided connection params
+        (opts.conn.clone(), 0.0)
+    };
 
-    let startup_time_s = setup_start.elapsed().as_secs_f64();
-    println!(
-        "{} container is ready after {:.2} seconds",
-        opts.adapter_name,
-        startup_time_s
-    );
-
-    // All writers will use the shared adapter instance
-    // This is necessary because:
-    // 1. Containerized adapters (UmaDB, KurrentDB, etc.) manage container lifecycle in setup()
-    // 2. Each adapter stores its client internally (Arc<Mutex<Client>>)
-    // 3. Creating new adapter instances would require complex container sharing logic
-    //
-    // Note: This means all writers share the same client connection pool.
-    // Most adapters handle concurrency well at the client level (gRPC multiplexing, etc.),
-    // but HTTP-based adapters like EventsourcingDB may show limited throughput scaling.
-    let writer_adapter = shared_adapter.clone();
+    // Create one adapter per writer for true concurrency
+    println!("Creating {} writer clients...", wl.writers);
+    let mut writer_adapters: Vec<Arc<dyn EventStoreAdapter>> = Vec::new();
+    for i in 0..wl.writers {
+        match factory.create(&conn_params) {
+            Ok(adapter) => writer_adapters.push(adapter.into()),
+            Err(e) => {
+                eprintln!("Failed to create writer {}: {}", i, e);
+                if let Some(ref mut cm) = container_manager {
+                    cm.stop().await?;
+                }
+                anyhow::bail!("Failed to create writer {}: {}", i, e);
+            }
+        }
+    }
+    println!("All {} writer clients ready", wl.writers);
 
     // Add 1s warmup + 1s cooldown to the actual run time
     // This prevents startup glitches and incomplete final buckets in plots
@@ -61,19 +73,17 @@ pub async fn run_workload(
     let mut set = JoinSet::new();
 
     // Start a background task to periodically collect container stats during the workload
-    let adapter_for_stats = shared_adapter.clone();
+    let container_id = container_manager.as_ref().and_then(|cm| cm.container_id());
     let stats_handle = tokio::spawn(async move {
         let mut cpu_samples = Vec::new();
         let mut mem_samples = Vec::new();
 
         // Start sampling immediately as workload begins
         while Instant::now() < end_at {
-            if let Ok(metrics) = adapter_for_stats.collect_container_metrics().await {
-                if let Some(cpu) = metrics.avg_cpu_percent {
-                    cpu_samples.push(cpu);
-                }
-                if let Some(mem) = metrics.avg_memory_bytes {
-                    mem_samples.push(mem);
+            if let Some(ref id) = container_id {
+                if let Ok(stats) = container_stats::get_container_stats(id) {
+                    cpu_samples.push(stats.cpu_percent);
+                    mem_samples.push(stats.memory_bytes);
                 }
             }
             // Sample every 1 second to capture short workloads
@@ -83,9 +93,8 @@ pub async fn run_workload(
         (cpu_samples, mem_samples)
     });
 
-    // Start one task per writer - all share the same adapter instance
-    for i in 0..wl.writers {
-        let adapter = writer_adapter.clone();
+    // Start one task per writer - each uses its own adapter instance
+    for (i, adapter) in writer_adapters.into_iter().enumerate() {
         let samples = samples.clone();
         let wl = wl.clone();
         let seed = opts.seed + (i as u64);
@@ -142,7 +151,23 @@ pub async fn run_workload(
     let (cpu_samples, mem_samples) = stats_handle.await.unwrap_or_default();
 
     // Collect final container metrics (for image size)
-    let mut container_metrics = shared_adapter.collect_container_metrics().await.unwrap_or_default();
+    let mut container_metrics = if let Some(ref cm) = container_manager {
+        if let Some(id) = cm.container_id() {
+            let image_size_bytes = container_stats::get_container_image_size(&id).ok();
+            ContainerMetrics {
+                image_size_bytes,
+                startup_time_s,
+                avg_cpu_percent: None,
+                peak_cpu_percent: None,
+                avg_memory_bytes: None,
+                peak_memory_bytes: None,
+            }
+        } else {
+            ContainerMetrics::default()
+        }
+    } else {
+        ContainerMetrics::default()
+    };
     container_metrics.startup_time_s = startup_time_s;
 
     // Compute CPU and memory statistics from samples collected during workload
@@ -180,7 +205,10 @@ pub async fn run_workload(
         samples: samples_vec,
     };
 
-    shared_adapter.teardown().await?;
+    // Stop container if we started one
+    if let Some(mut cm) = container_manager {
+        cm.stop().await?;
+    }
 
     Ok(metrics)
 }

@@ -1,50 +1,42 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use axonserver_client::proto::dcb::{Criterion, Event, Tag, TaggedEvent, TagsAndNamesCriterion};
+use axonserver_client::proto::dcb::source_events_response;
 use axonserver_client::AxonServerClient;
-use bench_core::adapter::{ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
-use bench_core::container_stats;
-use bench_core::metrics::ContainerMetrics;
+use bench_core::adapter::{ConnectionParams, ContainerManager, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
 use bench_testcontainers::axonserver::{AxonServer, AXONSERVER_GRPC_PORT};
-use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
-use tokio::sync::Mutex;
 use tokio::time::Duration;
 
-pub struct AxonServerAdapter {
-    client: Arc<Mutex<Option<AxonServerClient>>>,
-    container: Arc<Mutex<Option<ContainerAsync<AxonServer>>>>,
+// Container manager - handles lifecycle
+pub struct AxonServerContainerManager {
+    container: Option<ContainerAsync<AxonServer>>,
 }
 
-impl AxonServerAdapter {
+impl AxonServerContainerManager {
     pub fn new() -> Self {
-        Self {
-            client: Arc::new(Mutex::new(None)),
-            container: Arc::new(Mutex::new(None)),
-        }
+        Self { container: None }
     }
 }
 
 #[async_trait]
-impl EventStoreAdapter for AxonServerAdapter {
-    async fn setup(&self) -> Result<()> {
+impl ContainerManager for AxonServerContainerManager {
+    async fn start(&mut self) -> Result<ConnectionParams> {
         let container = AxonServer::default().start().await?;
         let host_port = container.get_host_port_ipv4(AXONSERVER_GRPC_PORT).await?;
         let uri = format!("http://localhost:{}", host_port);
 
-        let mut container_guard = self.container.lock().await;
-        *container_guard = Some(container);
-        drop(container_guard);
+        self.container = Some(container);
 
+        // Wait for container to be ready
         for _ in 0..60 {
-            if let Ok(client) = AxonServerClient::connect(uri.clone()).await {
-                let mut client_guard = self.client.lock().await;
-                *client_guard = Some(client);
-                drop(client_guard);
-
-                if self.ping().await.is_ok() {
-                    return Ok(());
+            if let Ok(mut client) = AxonServerClient::connect(uri.clone()).await {
+                if client.get_head().await.is_ok() {
+                    return Ok(ConnectionParams {
+                        uri,
+                        options: Default::default(),
+                    });
                 }
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -52,41 +44,43 @@ impl EventStoreAdapter for AxonServerAdapter {
         anyhow::bail!("Axon Server container did not become ready within 60s")
     }
 
-    async fn teardown(&self) -> Result<()> {
-        {
-            let mut guard = self.client.lock().await;
-            *guard = None;
-        }
-        let container = {
-            let mut guard = self.container.lock().await;
-            guard.take()
-        };
-        if let Some(c) = container {
-            c.stop().await?;
-            drop(c);
+    async fn stop(&mut self) -> Result<()> {
+        if let Some(container) = self.container.take() {
+            container.stop().await?;
         }
         Ok(())
     }
 
-    async fn connect(&self, params: &ConnectionParams) -> Result<()> {
+    fn container_id(&self) -> Option<String> {
+        self.container.as_ref().map(|c| c.id().to_string())
+    }
+}
+
+// Lightweight adapter - just wraps a client
+pub struct AxonServerAdapter {
+    client: AxonServerClient,
+}
+
+impl AxonServerAdapter {
+    pub async fn new(params: &ConnectionParams) -> Result<Self> {
         let uri = if params.uri.is_empty() {
             "http://localhost:8124".to_string()
         } else {
             params.uri.clone()
         };
         let client = AxonServerClient::connect(uri).await?;
-        let mut guard = self.client.lock().await;
-        *guard = Some(client);
-        Ok(())
-    }
 
+        Ok(Self { client })
+    }
+}
+
+#[async_trait]
+impl EventStoreAdapter for AxonServerAdapter {
     async fn append(&self, evt: EventData) -> Result<()> {
-        let mut client = {
-            let guard = self.client.lock().await;
-            guard
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("Axon Server client not connected"))?
-        };
+        // Note: AxonServerClient requires &mut self for operations,
+        // but we need &self for the trait. We'll need to clone the client.
+        // This is a limitation of the axonserver_client API design.
+        let mut client = self.client.clone();
 
         let mut tags: Vec<Tag> = evt
             .tags
@@ -115,20 +109,11 @@ impl EventStoreAdapter for AxonServerAdapter {
             tag: tags,
         };
         client.append(vec![tagged]).await?;
-
-        // Write back in case the inner channel state changed.
-        let mut guard = self.client.lock().await;
-        *guard = Some(client);
         Ok(())
     }
 
     async fn read(&self, req: ReadRequest) -> Result<Vec<ReadEvent>> {
-        let mut client = {
-            let guard = self.client.lock().await;
-            guard
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("Axon Server client not connected"))?
-        };
+        let mut client = self.client.clone();
 
         let from = req.from_offset.unwrap_or(0) as i64;
         let criterion = Criterion {
@@ -165,55 +150,16 @@ impl EventStoreAdapter for AxonServerAdapter {
                 }
             }
         }
-
-        let mut guard = self.client.lock().await;
-        *guard = Some(client);
         Ok(out)
     }
 
     async fn ping(&self) -> Result<Duration> {
-        let mut client = {
-            let guard = self.client.lock().await;
-            guard
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("Axon Server client not connected"))?
-        };
+        let mut client = self.client.clone();
         let t0 = std::time::Instant::now();
         client.get_head().await?;
-        let elapsed = t0.elapsed();
-
-        let mut guard = self.client.lock().await;
-        *guard = Some(client);
-        Ok(elapsed)
-    }
-
-    async fn collect_container_metrics(&self) -> Result<ContainerMetrics> {
-        let container_guard = self.container.lock().await;
-        if let Some(container) = container_guard.as_ref() {
-            let container_id = container.id();
-
-            // Get image size
-            let image_size_bytes = container_stats::get_container_image_size(container_id).ok();
-
-            // Get current stats
-            let stats = container_stats::get_container_stats(container_id).ok();
-
-            Ok(ContainerMetrics {
-                image_size_bytes,
-                startup_time_s: 0.0, // Will be set by runner
-                avg_cpu_percent: stats.as_ref().map(|s| s.cpu_percent),
-                peak_cpu_percent: stats.as_ref().map(|s| s.cpu_percent),
-                avg_memory_bytes: stats.as_ref().map(|s| s.memory_bytes),
-                peak_memory_bytes: stats.map(|s| s.memory_bytes),
-            })
-        } else {
-            Ok(ContainerMetrics::default())
-        }
+        Ok(t0.elapsed())
     }
 }
-
-// Bring the oneof variants into scope for pattern matching.
-use axonserver_client::proto::dcb::source_events_response;
 
 pub struct AxonServerFactory;
 
@@ -221,8 +167,19 @@ impl bench_core::AdapterFactory for AxonServerFactory {
     fn name(&self) -> &'static str {
         "axonserver"
     }
-    fn create(&self) -> Box<dyn EventStoreAdapter> {
-        Box::new(AxonServerAdapter::new())
+
+    fn create(&self, params: &ConnectionParams) -> Result<Box<dyn EventStoreAdapter>> {
+        // AxonServerAdapter::new is async, so we need to block
+        let adapter = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                AxonServerAdapter::new(params).await
+            })
+        })?;
+        Ok(Box::new(adapter))
+    }
+
+    fn create_container_manager(&self) -> Option<Box<dyn ContainerManager>> {
+        Some(Box::new(AxonServerContainerManager::new()))
     }
 }
 

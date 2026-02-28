@@ -6,16 +6,13 @@ use std::time::Duration;
 pub struct DummyAdapter;
 
 impl DummyAdapter {
-    pub fn new() -> Self {
-        Self
+    pub fn new(_params: &ConnectionParams) -> Result<Self> {
+        Ok(Self)
     }
 }
 
 #[async_trait]
 impl EventStoreAdapter for DummyAdapter {
-    async fn connect(&self, _params: &ConnectionParams) -> Result<()> {
-        Ok(())
-    }
     async fn append(&self, _evt: EventData) -> Result<()> {
         tokio::time::sleep(Duration::from_micros(10)).await;
         Ok(())
@@ -29,11 +26,13 @@ impl EventStoreAdapter for DummyAdapter {
 }
 
 pub struct DummyFactory;
+
 impl bench_core::AdapterFactory for DummyFactory {
     fn name(&self) -> &'static str {
         "dummy"
     }
-    fn create(&self) -> Box<dyn EventStoreAdapter> {
-        Box::new(DummyAdapter::new())
+    fn create(&self, params: &ConnectionParams) -> Result<Box<dyn EventStoreAdapter>> {
+        Ok(Box::new(DummyAdapter::new(params)?))
     }
+    // No container manager - dummy adapter doesn't use containers
 }

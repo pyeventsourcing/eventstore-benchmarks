@@ -9,9 +9,6 @@ struct DummyAdapter;
 
 #[async_trait]
 impl EventStoreAdapter for DummyAdapter {
-    async fn connect(&self, _params: &ConnectionParams) -> anyhow::Result<()> {
-        Ok(())
-    }
     async fn append(&self, _evt: EventData) -> anyhow::Result<()> {
         // Simulate very small latency
         tokio::time::sleep(Duration::from_micros(10)).await;
@@ -31,14 +28,15 @@ impl AdapterFactory for DummyFactory {
     fn name(&self) -> &'static str {
         "dummy"
     }
-    fn create(&self) -> Box<dyn EventStoreAdapter> {
-        Box::new(DummyAdapter)
+    fn create(&self, _params: &ConnectionParams) -> anyhow::Result<Box<dyn EventStoreAdapter>> {
+        Ok(Box::new(DummyAdapter))
     }
+    // No container manager for dummy
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_workload_smoke() {
-    let adapter = Arc::new(DummyAdapter);
+    let factory: Arc<dyn AdapterFactory> = Arc::new(DummyFactory);
     let wl = Workload {
         name: "test".to_string(),
         duration_seconds: 1,
@@ -60,7 +58,7 @@ async fn run_workload_smoke() {
         seed: 42,
     };
 
-    let res = run_workload(adapter, wl, opts).await.expect("run");
+    let res = run_workload(factory, wl, opts).await.expect("run");
     assert!(res.summary.events_written > 0);
     assert!(res.summary.throughput_eps > 0.0);
     assert!(!res.samples.is_empty());
