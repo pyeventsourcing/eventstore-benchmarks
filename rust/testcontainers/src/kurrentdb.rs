@@ -1,4 +1,4 @@
-use testcontainers::core::{AccessMode, ContainerPort, Mount, MountType, WaitFor};
+use testcontainers::core::{ContainerPort, Mount, WaitFor};
 use testcontainers::Image;
 
 const NAME: &str = "docker.kurrent.io/kurrent-latest/kurrentdb";
@@ -25,7 +25,7 @@ impl Default for KurrentDb {
                 ("KURRENTDB_TELEMETRY_OPTOUT", "true"),
             ],
             mounts: vec![
-                Mount::volume_mount("./container-data", "/var/lib/kurrentdb")
+                Mount::volume_mount("", "/var/lib/kurrentdb")
             ],
         }
     }

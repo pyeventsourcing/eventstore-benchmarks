@@ -25,7 +25,7 @@ impl Default for AxonServer {
                 ("AXONIQ_AXONSERVER_STANDALONE_DCB", "true"),
             ],
             mounts: vec![
-                Mount::volume_mount("./container-data", "/axonserver/events")
+                Mount::volume_mount("", "/axonserver/events")
             ],
         }
     }

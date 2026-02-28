@@ -8,6 +8,8 @@ WORKLOAD_TEMPLATE="workloads/concurrent_writers.yaml"
 RAW_DIR="results/raw"
 PUBLISHED_DIR="results/published"
 
+cargo build --release -p esbs
+
 # Clean previous results
 rm -rf "$RAW_DIR" "$PUBLISHED_DIR"
 
@@ -20,7 +22,7 @@ for w in "${WRITERS[@]}"; do
 
   for store in "${STORES[@]}"; do
     echo "=== Running $store with $w writers ==="
-    cargo run --release -p esbs -- run \
+    ./target/release/esbs run \
       --store "$store" \
       --workload "$WORKLOAD_FILE" \
       --output "$RAW_DIR"

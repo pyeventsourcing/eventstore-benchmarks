@@ -19,7 +19,7 @@ impl Default for EventsourcingDb {
     fn default() -> Self {
         Self {
             mounts: vec![
-                Mount::volume_mount("./container-data", "/var/lib/esdb")
+                Mount::volume_mount("", "/var/lib/esdb")
             ],
         }
     }

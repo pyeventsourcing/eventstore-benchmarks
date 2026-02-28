@@ -16,7 +16,7 @@ impl Default for UmaDb {
     fn default() -> Self {
         Self {
             mounts: vec![
-                Mount::volume_mount("./container-data", "/data")
+                Mount::volume_mount("", "/data")
             ],
         }
     }
