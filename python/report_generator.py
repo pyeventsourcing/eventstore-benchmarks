@@ -64,14 +64,21 @@ def plot_latency_cdf(samples: pd.DataFrame, out_path: Path):
 
 
 def plot_throughput(samples: pd.DataFrame, out_path: Path):
-    t0 = samples["t_ms"].min()
     df = samples.copy()
-    df["t_rel_ms"] = df["t_ms"] - t0
-    df["bucket"] = (df["t_rel_ms"] // 100).astype(int)
-    grp = df.groupby("bucket")["ok"].apply(lambda x: int(x.sum()))
-    eps = grp * 10
+    # Convert timestamps to datetime for proper time-based grouping
+    df["timestamp"] = pd.to_datetime(df["t_ms"], unit="ms")
+    df = df.set_index("timestamp")
+
+    # Group by 100ms intervals using resample (proper time-based grouping)
+    # This ensures intervals are aligned to actual time, not artificial buckets
+    grp = df[df["ok"]].resample("100ms").size()
+    eps = grp * 10  # Convert to events/sec (100ms -> 10 samples per second)
+
+    # Convert index to seconds relative to start
+    time_seconds = (grp.index - grp.index[0]).total_seconds()
+
     plt.figure(figsize=(6, 4))
-    plt.plot(eps.index.values / 10.0, eps.values)
+    plt.plot(time_seconds, eps.values)
     plt.xlabel("Time (s)")
     plt.ylabel("Events/sec")
     plt.title("Throughput over time")
@@ -106,14 +113,20 @@ def plot_comparison_throughput(run_data, title, out_path: Path):
     """Plot throughput over time comparing stores for a specific writer count."""
     plt.figure(figsize=(8, 5))
     for label, samples_df in run_data:
-        t0 = samples_df["t_ms"].min()
         df = samples_df.copy()
-        df["t_rel_ms"] = df["t_ms"] - t0
-        df["bucket"] = (df["t_rel_ms"] // 100).astype(int)
-        grp = df.groupby("bucket")["ok"].apply(lambda x: int(x.sum()))
-        eps = grp * 10
+        # Convert timestamps to datetime for proper time-based grouping
+        df["timestamp"] = pd.to_datetime(df["t_ms"], unit="ms")
+        df = df.set_index("timestamp")
+
+        # Group by 100ms intervals using resample
+        grp = df[df["ok"]].resample("100ms").size()
+        eps = grp * 10  # Convert to events/sec
+
+        # Convert index to seconds relative to start
+        time_seconds = (grp.index - grp.index[0]).total_seconds()
+
         color = get_adapter_color(label)
-        plt.plot(eps.index.values / 10.0, eps.values, label=label, color=color, linewidth=2)
+        plt.plot(time_seconds, eps.values, label=label, color=color, linewidth=2)
     plt.xlabel("Time (s)")
     plt.ylabel("Events/sec")
     plt.title(title)
