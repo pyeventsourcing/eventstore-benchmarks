@@ -1,4 +1,4 @@
-use testcontainers::core::{ContainerPort, WaitFor};
+use testcontainers::core::{AccessMode, ContainerPort, Mount, MountType, WaitFor};
 use testcontainers::Image;
 
 const NAME: &str = "docker.kurrent.io/kurrent-latest/kurrentdb";
@@ -9,22 +9,23 @@ pub const KURRENTDB_PORT: ContainerPort = ContainerPort::Tcp(2113);
 
 #[derive(Debug, Clone)]
 pub struct KurrentDb {
-    env_vars: Vec<(String, String)>,
+    env_vars: Vec<(&'static str, &'static str)>,
+    mounts: Vec<Mount>,
 }
 
 impl Default for KurrentDb {
     fn default() -> Self {
         Self {
             env_vars: vec![
-                ("KURRENTDB_INSECURE".to_string(), "true".to_string()),
-                ("KURRENTDB_RUN_PROJECTIONS".to_string(), "All".to_string()),
-                (
-                    "KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP".to_string(),
-                    "true".to_string(),
-                ),
-                ("KURRENTDB_CLUSTER_SIZE".to_string(), "1".to_string()),
-                ("KURRENTDB_MEM_DB".to_string(), "false".to_string()),
-                ("KURRENTDB_TELEMETRY_OPTOUT".to_string(), "true".to_string()),
+                ("KURRENTDB_INSECURE", "true"),
+                ("KURRENTDB_RUN_PROJECTIONS", "All"),
+                ("KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP", "true"),
+                ("KURRENTDB_CLUSTER_SIZE", "1"),
+                ("KURRENTDB_MEM_DB", "false"),
+                ("KURRENTDB_TELEMETRY_OPTOUT", "true"),
+            ],
+            mounts: vec![
+                Mount::volume_mount("./container-data", "/var/lib/kurrentdb")
             ],
         }
     }
@@ -51,9 +52,13 @@ impl Image for KurrentDb {
             impl Into<std::borrow::Cow<'_, str>>,
         ),
     > {
-        self.env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+        self.env_vars.iter().map(|(k, v)| (*k, *v))
     }
 
+    fn mounts(&self) -> impl IntoIterator<Item=&Mount> {
+        self.mounts.iter()
+    }
+    
     fn expose_ports(&self) -> &[ContainerPort] {
         &[KURRENTDB_PORT]
     }

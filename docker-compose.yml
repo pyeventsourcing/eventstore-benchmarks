@@ -5,7 +5,7 @@ services:
     ports:
       - "50051:50051"
 #    volumes:
-#      - ./data/umadb:/data
+#      - ./container-data/umadb:/data
     restart: unless-stopped
 
   kurrentdb:
@@ -18,5 +18,5 @@ services:
       - KURRENTDB_RUN_PROJECTIONS=All
       - KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP=true
 #    volumes:
-#      - ./data/kurrentdb:/var/lib/kurrentdb
+#      - ./container-data/kurrentdb:/var/lib/kurrentdb
     restart: unless-stopped

@@ -3,6 +3,8 @@ use crate::metrics::{now_ms, LatencyRecorder, RawSample, RunMetrics, Summary};
 use crate::workload::Workload;
 use anyhow::Result;
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -15,11 +17,23 @@ pub struct RunOptions {
     pub seed: u64,
 }
 
+fn prepare_container_data() -> Result<()> {
+    let data_dir = Path::new("./container-data");
+    if data_dir.exists() {
+        fs::remove_dir_all(data_dir)?;
+    }
+    fs::create_dir_all(data_dir)?;
+    println!("Prepared empty ./container-data directory");
+    Ok(())
+}
+
 pub async fn run_workload(
     adapter: Arc<dyn EventStoreAdapter>,
     wl: Workload,
     opts: RunOptions,
 ) -> Result<RunMetrics> {
+    prepare_container_data()?;
+
     println!("Starting {} container...", opts.adapter_name);
     let start_time = std::time::Instant::now();
     adapter.setup().await?;

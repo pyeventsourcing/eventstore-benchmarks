@@ -1,4 +1,4 @@
-use testcontainers::core::{ContainerPort, WaitFor};
+use testcontainers::core::{ContainerPort, Mount, WaitFor};
 use testcontainers::Image;
 
 const NAME: &str = "axoniq/axonserver";
@@ -12,25 +12,20 @@ pub const AXONSERVER_HTTP_PORT: ContainerPort = ContainerPort::Tcp(8024);
 
 #[derive(Debug, Clone)]
 pub struct AxonServer {
-    env_vars: Vec<(String, String)>,
+    env_vars: Vec<(&'static str, &'static str)>,
+    mounts: Vec<Mount>,
 }
 
 impl Default for AxonServer {
     fn default() -> Self {
         Self {
             env_vars: vec![
-                (
-                    "AXONIQ_AXONSERVER_NAME".to_string(),
-                    "bench-axon-server".to_string(),
-                ),
-                (
-                    "AXONIQ_AXONSERVER_HOSTNAME".to_string(),
-                    "bench-axon-server".to_string(),
-                ),
-                (
-                    "AXONIQ_AXONSERVER_STANDALONE_DCB".to_string(),
-                    "true".to_string(),
-                ),
+                ("AXONIQ_AXONSERVER_NAME", "bench-axon-server"),
+                ("AXONIQ_AXONSERVER_HOSTNAME", "bench-axon-server"),
+                ("AXONIQ_AXONSERVER_STANDALONE_DCB", "true"),
+            ],
+            mounts: vec![
+                Mount::volume_mount("./container-data", "/axonserver/events")
             ],
         }
     }
@@ -57,7 +52,11 @@ impl Image for AxonServer {
             impl Into<std::borrow::Cow<'_, str>>,
         ),
     > {
-        self.env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+        self.env_vars.iter().map(|(k, v)| (*k, *v))
+    }
+
+    fn mounts(&self) -> impl IntoIterator<Item=&Mount> {
+        self.mounts.iter()
     }
 
     fn expose_ports(&self) -> &[ContainerPort] {

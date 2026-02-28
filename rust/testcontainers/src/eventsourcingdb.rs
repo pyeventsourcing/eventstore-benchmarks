@@ -1,4 +1,4 @@
-use testcontainers::core::{ContainerPort, WaitFor};
+use testcontainers::core::{ContainerPort, Mount, WaitFor};
 use testcontainers::Image;
 
 const NAME: &str = "thenativeweb/eventsourcingdb";
@@ -11,11 +11,17 @@ pub const EVENTSOURCINGDB_PORT: ContainerPort = ContainerPort::Tcp(3000);
 pub const EVENTSOURCINGDB_API_TOKEN: &str = "secret";
 
 #[derive(Debug, Clone)]
-pub struct EventsourcingDb;
+pub struct EventsourcingDb {
+    mounts: Vec<Mount>,
+}
 
 impl Default for EventsourcingDb {
     fn default() -> Self {
-        Self
+        Self {
+            mounts: vec![
+                Mount::volume_mount("./container-data", "/var/lib/esdb")
+            ],
+        }
     }
 }
 
@@ -38,6 +44,9 @@ impl Image for EventsourcingDb {
             "--api-token",
             EVENTSOURCINGDB_API_TOKEN,
         ]
+    }
+    fn mounts(&self) -> impl IntoIterator<Item=&Mount> {
+        self.mounts.iter()
     }
     fn expose_ports(&self) -> &[ContainerPort] {
         &[EVENTSOURCINGDB_PORT]
