@@ -1,5 +1,5 @@
 name: concurrent_writers
-duration_seconds: 5
+duration_seconds: 10
 writers: 4
 event_size_bytes: 256
 streams:

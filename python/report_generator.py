@@ -203,7 +203,7 @@ def plot_comparison_throughput(run_data, title, out_path: Path, data_path: Path 
         color = get_adapter_color(label)
         # Plot raw data with thin line
         plt.plot(result["time_s"], result["throughput_eps"],
-                linewidth=0.5, alpha=0.9, color=color)
+                linewidth=0.5, alpha=0.4, color=color)
         # Plot smoothed data with thick line
         plt.plot(result["time_s"], result["throughput_eps_smooth"],
                 label=label, color=color, linewidth=2.5, alpha=0.9)
