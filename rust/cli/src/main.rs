@@ -138,18 +138,17 @@ fn main() -> Result<()> {
                 options: option.into_iter().collect(),
             };
 
-            let factory_box = factories
-                .into_iter()
+            let factory = factories
+                .iter()
                 .find(|f| f.name() == adapter_name)
                 .ok_or_else(|| anyhow::anyhow!("unknown adapter: {}", adapter_name))?;
-
-            let factory_arc: Arc<dyn AdapterFactory> = factory_box.into();
+            let adapter: Arc<dyn bench_core::EventStoreAdapter> = factory.create().into();
 
             let rt = Runtime::new()?;
             let adapter_name_for_run = adapter_name.clone();
             let result = rt.block_on(async move {
                 run_workload(
-                    factory_arc,
+                    adapter,
                     wl,
                     RunOptions {
                         adapter_name: adapter_name_for_run,

@@ -1,4 +1,4 @@
-use crate::adapter::{AdapterFactory, ConnectionParams, EventData, EventStoreAdapter};
+use crate::adapter::{ConnectionParams, EventData, EventStoreAdapter};
 use crate::metrics::{now_ms, LatencyRecorder, RawSample, RunMetrics, Summary};
 use crate::workload::Workload;
 use anyhow::Result;
@@ -16,12 +16,11 @@ pub struct RunOptions {
 }
 
 pub async fn run_workload(
-    factory: Arc<dyn AdapterFactory>,
+    adapter: Arc<dyn EventStoreAdapter>,
     wl: Workload,
     opts: RunOptions,
 ) -> Result<RunMetrics> {
-    // Create a shared adapter for setup/teardown and stats collection
-    let shared_adapter: Arc<dyn EventStoreAdapter> = Arc::from(factory.create());
+    let shared_adapter = adapter;
 
     // Start container.
     println!("Starting {} container...", opts.adapter_name);
@@ -35,6 +34,17 @@ pub async fn run_workload(
         opts.adapter_name,
         startup_time_s
     );
+
+    // All writers will use the shared adapter instance
+    // This is necessary because:
+    // 1. Containerized adapters (UmaDB, KurrentDB, etc.) manage container lifecycle in setup()
+    // 2. Each adapter stores its client internally (Arc<Mutex<Client>>)
+    // 3. Creating new adapter instances would require complex container sharing logic
+    //
+    // Note: This means all writers share the same client connection pool.
+    // Most adapters handle concurrency well at the client level (gRPC multiplexing, etc.),
+    // but HTTP-based adapters like EventsourcingDB may show limited throughput scaling.
+    let writer_adapter = shared_adapter.clone();
 
     // Add 1s warmup + 1s cooldown to the actual run time
     // This prevents startup glitches and incomplete final buckets in plots
@@ -73,24 +83,14 @@ pub async fn run_workload(
         (cpu_samples, mem_samples)
     });
 
-    // Start one client per writer - each gets its own adapter instance
+    // Start one task per writer - all share the same adapter instance
     for i in 0..wl.writers {
-        let factory = factory.clone();
+        let adapter = writer_adapter.clone();
         let samples = samples.clone();
         let wl = wl.clone();
-        let opts = opts.clone();
         let seed = opts.seed + (i as u64);
 
         set.spawn(async move {
-            // Create a dedicated adapter instance for this writer
-            let adapter: Arc<dyn EventStoreAdapter> = Arc::from(factory.create());
-
-            // Connect the adapter
-            if let Err(e) = adapter.connect(&opts.conn).await {
-                eprintln!("Writer {} failed to connect: {}", i, e);
-                return LatencyRecorder::new();
-            }
-
             let mut rng = StdRng::seed_from_u64(seed);
             let use_heavy_tail = wl.streams.distribution.to_lowercase() == "zipf";
             let hot_set = 100_u64.min(wl.streams.unique_streams.max(1));

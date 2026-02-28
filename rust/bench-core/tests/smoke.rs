@@ -38,7 +38,7 @@ impl AdapterFactory for DummyFactory {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_workload_smoke() {
-    let factory: Arc<dyn AdapterFactory> = Arc::new(DummyFactory);
+    let adapter = Arc::new(DummyAdapter);
     let wl = Workload {
         name: "test".to_string(),
         duration_seconds: 1,
@@ -60,7 +60,7 @@ async fn run_workload_smoke() {
         seed: 42,
     };
 
-    let res = run_workload(factory, wl, opts).await.expect("run");
+    let res = run_workload(adapter, wl, opts).await.expect("run");
     assert!(res.summary.events_written > 0);
     assert!(res.summary.throughput_eps > 0.0);
     assert!(!res.samples.is_empty());
