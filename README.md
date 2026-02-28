@@ -14,6 +14,25 @@ The benchmark is built with:
 
 ---
 
+# Running Benchmarks
+
+At the moment there is only one workload: concurrent writers.
+
+Run the `sweep_writers.sh` script to execute the benchmark.
+
+```bash
+# Setup Python virtual environment
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r python/requirements.txt
+
+# Run the benchmark...
+./scripts/sweep_writers.sh
+```
+
+Then open `results/published/index.html` in your browser to view the results.
+
+---
+
 # Why This Exists
 
 Most existing benchmarks for event stores:
@@ -308,34 +327,6 @@ trait EventStoreAdapter {
 ```
 
 This allows the same workload to run across different systems.
-
----
-
-# Running Benchmarks
-
-Quick start (UmaDB example):
-
-```bash
-# 1) Start UmaDB via Docker Compose (once)
-docker compose up -d umadb
-
-# 2) Build the CLI
-toolchain: cargo build --release -p esbs
-
-# 3) Run a sample workload (writes raw results under results/raw/<timestamp>/)
-./target/release/esbs run \
-  --store umadb \
-  --workload workloads/concurrent_writers.yaml \
-  --uri http://localhost:50051 \
-  --seed 42
-
-# 4) Generate a report (images + HTML)
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r python/requirements.txt
-python3 python/report_generator.py --raw results/raw --out results/published
-```
-
-See the full command reference below for more options (TLS, API keys, custom output paths, etc.).
 
 ---
 
