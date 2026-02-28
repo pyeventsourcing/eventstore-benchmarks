@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from scipy.ndimage import gaussian_filter1d
 
 sns.set_theme(style="whitegrid")
 
@@ -25,6 +26,12 @@ def get_adapter_color(adapter_name):
 
 
 def load_runs(raw_dir: Path):
+    """Load benchmark runs from raw results directory.
+
+    Samples are already filtered to the measurement window by the benchmark runner
+    (warmup/cooldown excluded). We load all samples and let individual plot functions
+    handle edge case filtering as needed.
+    """
     runs = []
     for run_path in sorted(raw_dir.iterdir()):
         if not run_path.is_dir():
@@ -38,6 +45,7 @@ def load_runs(raw_dir: Path):
             with open(samples_file) as f:
                 for line in f:
                     samples.append(json.loads(line))
+
             runs.append({
                 "path": run_path,
                 "summary": summary,
@@ -63,28 +71,98 @@ def plot_latency_cdf(samples: pd.DataFrame, out_path: Path):
     plt.close()
 
 
-def plot_throughput(samples: pd.DataFrame, out_path: Path):
+def compute_throughput_timeseries(samples: pd.DataFrame, bin_size_ms: int = 50):
+    """Compute throughput time series from samples.
+
+    Buckets are aligned so they start at the first sample timestamp and don't
+    extend beyond the last sample. This ensures all buckets are complete.
+
+    Returns:
+        dict with 'time_s', 'throughput_eps', and 'throughput_eps_smooth' arrays
+        or None if no valid data
+    """
     df = samples.copy()
-    # Convert timestamps to datetime for proper time-based grouping
-    df["timestamp"] = pd.to_datetime(df["t_ms"], unit="ms")
-    df = df.set_index("timestamp")
 
-    # Group by 100ms intervals using resample (proper time-based grouping)
-    # This ensures intervals are aligned to actual time, not artificial buckets
-    grp = df[df["ok"]].resample("100ms").size()
-    eps = grp * 10  # Convert to events/sec (100ms -> 10 samples per second)
+    # Filter only successful operations
+    df = df[df["ok"] == True].copy()
 
-    # Convert index to seconds relative to start
-    time_seconds = (grp.index - grp.index[0]).total_seconds()
+    if len(df) == 0:
+        return None
+
+    # Find actual time range from samples
+    t_min = df["t_ms"].min()
+    t_max = df["t_ms"].max()
+    duration_ms = t_max - t_min
+
+    if duration_ms <= 0:
+        return None
+
+    # Create bins that fit exactly within the sample time range
+    # Start bins at t_min, and only create complete bins
+    num_bins = int(duration_ms / bin_size_ms)
+
+    if num_bins == 0:
+        return None
+
+    # Assign each sample to a bin
+    df["bin"] = ((df["t_ms"] - t_min) / bin_size_ms).astype(int)
+    # Exclude any samples that fall into an incomplete final bin
+    df = df[df["bin"] < num_bins]
+
+    # Count samples per bin
+    bin_counts = df.groupby("bin").size()
+
+    # Create complete array with zeros for empty bins
+    counts = np.zeros(num_bins)
+    for bin_idx, count in bin_counts.items():
+        counts[bin_idx] = count
+
+    # Convert to events per second
+    eps = counts * (1000.0 / bin_size_ms)
+
+    # Time points at bin centers (more intuitive for plotting)
+    time_s = (np.arange(num_bins) + 0.5) * bin_size_ms / 1000.0
+
+    # Apply smoothing using Gaussian filter for smoother curves
+    eps_smooth = gaussian_filter1d(eps, sigma=2.0)
+
+    return {
+        "time_s": time_s,
+        "throughput_eps": eps,
+        "throughput_eps_smooth": eps_smooth,
+    }
+
+
+def plot_throughput(samples: pd.DataFrame, out_path: Path, data_path: Path = None):
+    """Plot throughput over time with both raw and smoothed data."""
+    result = compute_throughput_timeseries(samples, bin_size_ms=50)
+
+    if result is None:
+        return
+
+    # Save computed data if path provided
+    if data_path:
+        np.savez(
+            data_path,
+            time_s=result["time_s"],
+            throughput_eps=result["throughput_eps"],
+            throughput_eps_smooth=result["throughput_eps_smooth"],
+        )
 
     plt.figure(figsize=(6, 4))
-    plt.plot(time_seconds, eps.values)
+    # Plot raw data with thin line
+    plt.plot(result["time_s"], result["throughput_eps"],
+             linewidth=0.5, alpha=0.4, color='#1f77b4', label='Raw')
+    # Plot smoothed data with thick line
+    plt.plot(result["time_s"], result["throughput_eps_smooth"],
+             linewidth=2.5, alpha=0.9, color='#1f77b4', label='Smoothed')
     plt.xlabel("Time (s)")
     plt.ylabel("Events/sec")
     plt.title("Throughput over time")
-    plt.grid(True, ls=":")
+    plt.legend()
+    plt.grid(True, ls=":", alpha=0.6)
     plt.tight_layout()
-    plt.savefig(out_path)
+    plt.savefig(out_path, dpi=150)
     plt.close()
 
 
@@ -105,35 +183,52 @@ def plot_comparison_latency_cdf(run_data, title, out_path: Path):
     plt.legend()
     plt.grid(True, which="both", ls=":")
     plt.tight_layout()
-    plt.savefig(out_path)
+    plt.savefig(out_path, dpi=150)
     plt.close()
 
 
-def plot_comparison_throughput(run_data, title, out_path: Path):
+def plot_comparison_throughput(run_data, title, out_path: Path, data_path: Path = None):
     """Plot throughput over time comparing stores for a specific writer count."""
     plt.figure(figsize=(8, 5))
+
+    # Store data for all adapters if data_path provided
+    all_data = {}
+
     for label, samples_df in run_data:
-        df = samples_df.copy()
-        # Convert timestamps to datetime for proper time-based grouping
-        df["timestamp"] = pd.to_datetime(df["t_ms"], unit="ms")
-        df = df.set_index("timestamp")
+        result = compute_throughput_timeseries(samples_df, bin_size_ms=50)
 
-        # Group by 100ms intervals using resample
-        grp = df[df["ok"]].resample("100ms").size()
-        eps = grp * 10  # Convert to events/sec
-
-        # Convert index to seconds relative to start
-        time_seconds = (grp.index - grp.index[0]).total_seconds()
+        if result is None:
+            continue
 
         color = get_adapter_color(label)
-        plt.plot(time_seconds, eps.values, label=label, color=color, linewidth=2)
+        # Plot raw data with thin line
+        plt.plot(result["time_s"], result["throughput_eps"],
+                linewidth=0.5, alpha=0.9, color=color)
+        # Plot smoothed data with thick line
+        plt.plot(result["time_s"], result["throughput_eps_smooth"],
+                label=label, color=color, linewidth=2.5, alpha=0.9)
+
+        # Store data
+        if data_path:
+            all_data[label] = result
+
+    # Save combined data if path provided
+    if data_path and all_data:
+        # Save as npz with one array per adapter
+        save_dict = {}
+        for label, result in all_data.items():
+            save_dict[f"{label}_time_s"] = result["time_s"]
+            save_dict[f"{label}_throughput_eps"] = result["throughput_eps"]
+            save_dict[f"{label}_throughput_eps_smooth"] = result["throughput_eps_smooth"]
+        np.savez(data_path, **save_dict)
+
     plt.xlabel("Time (s)")
     plt.ylabel("Events/sec")
     plt.title(title)
     plt.legend()
-    plt.grid(True, ls=":")
+    plt.grid(True, ls=":", alpha=0.6)
     plt.tight_layout()
-    plt.savefig(out_path)
+    plt.savefig(out_path, dpi=150)
     plt.close()
 
 
@@ -228,7 +323,7 @@ def plot_p99_scaling(runs, out_path: Path):
     plt.grid(True, ls=":")
     plt.xticks(sorted({s["summary"].get("writers", 1) for s in runs}))
     plt.tight_layout()
-    plt.savefig(out_path)
+    plt.savefig(out_path, dpi=150)
     plt.close()
 
 
@@ -543,7 +638,7 @@ def main():
         report_dir.mkdir(parents=True, exist_ok=True)
 
         plot_latency_cdf(samples_df, report_dir / "latency_cdf.png")
-        plot_throughput(samples_df, report_dir / "throughput.png")
+        plot_throughput(samples_df, report_dir / "throughput.png", report_dir / "throughput_data.npz")
         generate_html(report_dir, run)
         print(f"Report written to {report_dir}/index.html")
 
@@ -566,6 +661,7 @@ def main():
                 run_data,
                 f"Throughput — {wc} writer(s)",
                 out_base / f"comparison_w{wc}_throughput.png",
+                out_base / f"comparison_w{wc}_throughput_data.npz",
             )
         elif len(run_data) == 1:
             # Single store at this writer count — still generate charts for consistency
@@ -578,6 +674,7 @@ def main():
                 run_data,
                 f"Throughput — {wc} writer(s)",
                 out_base / f"comparison_w{wc}_throughput.png",
+                out_base / f"comparison_w{wc}_throughput_data.npz",
             )
 
     # Generate scaling summary charts (throughput & p99 vs writers)
