@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WRITERS=(4 8)
-READERS=(4 8)
-#STORES=("umadb" "kurrentdb" "axonserver" "eventsourcingdb")
-STORES=("umadb" "kurrentdb")
+# TODO: Move this into the workload
+WRITERS=(1 2 4 8 16)
+READERS=(1 2 4 8 16)
+STORES=("umadb" "kurrentdb" "axonserver" "eventsourcingdb")
 RAW_DIR="results/raw"
 PUBLISHED_DIR="results/published"
 
@@ -13,6 +13,7 @@ cargo build --release -p esbs
 # Clean previous results
 rm -rf "$RAW_DIR" "$PUBLISHED_DIR"
 
+# TODO: Converge workload/workflow.
 # Run concurrent_writers workflow with different writer counts
 WORKFLOW="concurrent_writers"
 WORKLOAD_TEMPLATE="workloads/concurrent_writers.yaml"

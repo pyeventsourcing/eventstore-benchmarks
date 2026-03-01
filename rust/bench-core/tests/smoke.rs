@@ -40,8 +40,10 @@ async fn run_workload_smoke() {
     let factory: Arc<dyn AdapterFactory> = Arc::new(DummyFactory);
     let wl = Workload {
         name: "test".to_string(),
+        setup: None,
         duration_seconds: 1,
         writers: 2,
+        readers: 0,
         event_size_bytes: 64,
         streams: StreamsConfig {
             distribution: "uniform".to_string(),
