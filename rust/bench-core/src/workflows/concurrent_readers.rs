@@ -51,25 +51,45 @@ impl Workload for ConcurrentReadersWorkload {
             );
             let setup_start = Instant::now();
 
-            // Create a single writer for setup
-            let setup_adapter = store.create_adapter()?;
             let num_streams = setup_config
                 .prepopulate_streams
                 .unwrap_or(self.config.streams.unique_streams);
-            let events_per_stream =
-                (setup_config.events_to_prepopulate as f64 / num_streams as f64).ceil() as u64;
+            let total_events = setup_config.events_to_prepopulate;
+            let events_per_stream = (total_events as f64 / num_streams as f64).ceil() as u64;
 
-            // Prepopulate events across streams
-            for stream_idx in 0..num_streams {
-                for _ in 0..events_per_stream {
-                    let evt = crate::adapter::EventData {
-                        stream: format!("stream-{}", stream_idx),
-                        event_type: "setup".to_string(),
-                        payload: vec![0u8; self.config.event_size_bytes],
-                        tags: vec![],
-                    };
-                    setup_adapter.append(evt).await?;
+            // Prepopulate events across streams concurrently
+            let mut setup_set = JoinSet::new();
+            let concurrency = 10;
+            let streams_per_task = (num_streams as f64 / concurrency as f64).ceil() as usize;
+
+            for task_idx in 0..concurrency {
+                let start_stream = task_idx * streams_per_task;
+                let end_stream = (start_stream + streams_per_task).min(num_streams as usize);
+                if start_stream >= end_stream {
+                    continue;
                 }
+
+                let adapter = store.create_adapter()?;
+                let event_size = self.config.event_size_bytes;
+
+                setup_set.spawn(async move {
+                    for stream_idx in start_stream..end_stream {
+                        for _ in 0..events_per_stream {
+                            let evt = crate::adapter::EventData {
+                                stream: format!("stream-{}", stream_idx),
+                                event_type: "setup".to_string(),
+                                payload: vec![0u8; event_size],
+                                tags: vec![],
+                            };
+                            adapter.append(evt).await?;
+                        }
+                    }
+                    Ok::<(), anyhow::Error>(())
+                });
+            }
+
+            while let Some(res) = setup_set.join_next().await {
+                res??;
             }
 
             let setup_duration = setup_start.elapsed();

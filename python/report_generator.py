@@ -62,6 +62,8 @@ def load_runs(raw_dir: Path):
 
 
 def plot_latency_cdf(samples: pd.DataFrame, out_path: Path):
+    if samples.empty or "ok" not in samples.columns:
+        return
     lat_ms = samples.loc[samples["ok"], "latency_us"].astype(float) / 1000.0
     lat_ms = lat_ms.clip(lower=1e-3)
     lat_sorted = np.sort(lat_ms.values)
@@ -88,6 +90,8 @@ def compute_throughput_timeseries(samples: pd.DataFrame, bin_size_ms: int = 50):
         dict with 'time_s', 'throughput_eps', and 'throughput_eps_smooth' arrays
         or None if no valid data
     """
+    if samples.empty or "ok" not in samples.columns:
+        return None
     df = samples.copy()
 
     # Filter only successful operations
@@ -178,6 +182,8 @@ def plot_comparison_latency_cdf(run_data, title, out_path: Path):
     """Plot latency CDF comparing stores for a specific writer count."""
     plt.figure(figsize=(8, 5))
     for label, samples_df in run_data:
+        if samples_df.empty or "ok" not in samples_df.columns:
+            continue
         lat_ms = samples_df.loc[samples_df["ok"], "latency_us"].astype(float) / 1000.0
         lat_ms = lat_ms.clip(lower=1e-3)
         lat_sorted = np.sort(lat_ms.values)
@@ -257,6 +263,9 @@ def plot_throughput_scaling(runs, out_path: Path):
 
         # Compute throughput from raw samples for better accuracy
         samples_df = pd.DataFrame(run["samples"])
+
+        if samples_df.empty or "ok" not in samples_df.columns:
+            continue
 
         # Filter by ok=true
         ok_samples = samples_df[samples_df["ok"] == True].copy()
