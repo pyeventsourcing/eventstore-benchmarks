@@ -1,9 +1,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use axonserver_client::proto::dcb::{Criterion, Event, Tag, TaggedEvent, TagsAndNamesCriterion};
 use axonserver_client::proto::dcb::source_events_response;
+use axonserver_client::proto::dcb::{Criterion, Event, Tag, TaggedEvent, TagsAndNamesCriterion};
 use axonserver_client::AxonServerClient;
-use bench_core::adapter::{ConnectionParams, ContainerManager, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
+use bench_core::adapter::{
+    ConnectionParams, ContainerManager, EventData, EventStoreAdapter, ReadEvent, ReadRequest,
+};
 use bench_testcontainers::axonserver::{AxonServer, AXONSERVER_GRPC_PORT};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
@@ -171,9 +173,8 @@ impl bench_core::AdapterFactory for AxonServerFactory {
     fn create(&self, params: &ConnectionParams) -> Result<Box<dyn EventStoreAdapter>> {
         // AxonServerAdapter::new is async, so we need to block
         let adapter = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                AxonServerAdapter::new(params).await
-            })
+            tokio::runtime::Handle::current()
+                .block_on(async { AxonServerAdapter::new(params).await })
         })?;
         Ok(Box::new(adapter))
     }

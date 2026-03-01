@@ -24,9 +24,7 @@ impl Default for AxonServer {
                 ("AXONIQ_AXONSERVER_HOSTNAME", "bench-axon-server"),
                 ("AXONIQ_AXONSERVER_STANDALONE_DCB", "true"),
             ],
-            mounts: vec![
-                Mount::volume_mount("", "/axonserver/events")
-            ],
+            mounts: vec![Mount::volume_mount("", "/axonserver/events")],
         }
     }
 }
@@ -55,7 +53,7 @@ impl Image for AxonServer {
         self.env_vars.iter().map(|(k, v)| (*k, *v))
     }
 
-    fn mounts(&self) -> impl IntoIterator<Item=&Mount> {
+    fn mounts(&self) -> impl IntoIterator<Item = &Mount> {
         self.mounts.iter()
     }
 

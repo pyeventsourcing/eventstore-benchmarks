@@ -1,6 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use bench_core::adapter::{ConnectionParams, ContainerManager, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
+use bench_core::adapter::{
+    ConnectionParams, ContainerManager, EventData, EventStoreAdapter, ReadEvent, ReadRequest,
+};
 use bench_testcontainers::kurrentdb::{KurrentDb, KURRENTDB_PORT};
 use kurrentdb::{AppendToStreamOptions, Client, ClientSettings, ReadStreamOptions, StreamPosition};
 use testcontainers::runners::AsyncRunner;
@@ -35,9 +37,14 @@ impl ContainerManager for KurrentDbContainerManager {
             if let Ok(settings) = uri.parse::<ClientSettings>() {
                 if let Ok(client) = Client::new(settings) {
                     // Test with a ping append
-                    let event = kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
+                    let event =
+                        kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
                     let options = AppendToStreamOptions::default();
-                    if client.append_to_stream("_ping", &options, event).await.is_ok() {
+                    if client
+                        .append_to_stream("_ping", &options, event)
+                        .await
+                        .is_ok()
+                    {
                         return Ok(ConnectionParams {
                             uri,
                             options: Default::default(),
@@ -87,7 +94,9 @@ impl EventStoreAdapter for KurrentDbAdapter {
         let event =
             kurrentdb::EventData::binary(evt.event_type, evt.payload.into()).id(Uuid::new_v4());
         let options = AppendToStreamOptions::default();
-        self.client.append_to_stream(evt.stream, &options, event).await?;
+        self.client
+            .append_to_stream(evt.stream, &options, event)
+            .await?;
         Ok(())
     }
 
@@ -123,7 +132,9 @@ impl EventStoreAdapter for KurrentDbAdapter {
         // Perform a test append to verify the node is leader and accepting writes
         let event = kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
         let options = AppendToStreamOptions::default();
-        self.client.append_to_stream("_ping", &options, event).await?;
+        self.client
+            .append_to_stream("_ping", &options, event)
+            .await?;
         Ok(t0.elapsed())
     }
 }

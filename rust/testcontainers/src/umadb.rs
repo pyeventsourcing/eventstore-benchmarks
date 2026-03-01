@@ -15,9 +15,7 @@ pub struct UmaDb {
 impl Default for UmaDb {
     fn default() -> Self {
         Self {
-            mounts: vec![
-                Mount::volume_mount("", "/data")
-            ],
+            mounts: vec![Mount::volume_mount("", "/data")],
         }
     }
 }
@@ -35,7 +33,7 @@ impl Image for UmaDb {
         vec![WaitFor::message_on_stdout("UmaDB started")]
     }
 
-    fn mounts(&self) -> impl IntoIterator<Item=&Mount> {
+    fn mounts(&self) -> impl IntoIterator<Item = &Mount> {
         self.mounts.iter()
     }
 

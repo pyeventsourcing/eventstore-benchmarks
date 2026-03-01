@@ -18,9 +18,7 @@ pub struct EventsourcingDb {
 impl Default for EventsourcingDb {
     fn default() -> Self {
         Self {
-            mounts: vec![
-                Mount::volume_mount("", "/var/lib/esdb")
-            ],
+            mounts: vec![Mount::volume_mount("", "/var/lib/esdb")],
         }
     }
 }
@@ -45,7 +43,7 @@ impl Image for EventsourcingDb {
             EVENTSOURCINGDB_API_TOKEN,
         ]
     }
-    fn mounts(&self) -> impl IntoIterator<Item=&Mount> {
+    fn mounts(&self) -> impl IntoIterator<Item = &Mount> {
         self.mounts.iter()
     }
     fn expose_ports(&self) -> &[ContainerPort] {

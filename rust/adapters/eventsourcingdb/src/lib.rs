@@ -1,6 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use bench_core::adapter::{ConnectionParams, ContainerManager, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
+use bench_core::adapter::{
+    ConnectionParams, ContainerManager, EventData, EventStoreAdapter, ReadEvent, ReadRequest,
+};
 use bench_testcontainers::eventsourcingdb::{
     EventsourcingDb, EVENTSOURCINGDB_API_TOKEN, EVENTSOURCINGDB_PORT,
 };
@@ -40,9 +42,12 @@ impl ContainerManager for EventsourcingDbContainerManager {
             if client.ping().await.is_ok() {
                 return Ok(ConnectionParams {
                     uri: base_url,
-                    options: [("api_token".to_string(), EVENTSOURCINGDB_API_TOKEN.to_string())]
-                        .into_iter()
-                        .collect(),
+                    options: [(
+                        "api_token".to_string(),
+                        EVENTSOURCINGDB_API_TOKEN.to_string(),
+                    )]
+                    .into_iter()
+                    .collect(),
                 });
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -147,7 +152,10 @@ impl EventStoreAdapter for EventsourcingDbAdapter {
 
     async fn ping(&self) -> Result<Duration> {
         let t0 = std::time::Instant::now();
-        self.client.ping().await.map_err(|e| anyhow::anyhow!("{}", e))?;
+        self.client
+            .ping()
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         Ok(t0.elapsed())
     }
 }

@@ -1,7 +1,7 @@
 use crate::adapter::{EventData, EventStoreAdapter};
 use crate::metrics::{now_ms, LatencyRecorder, RawSample};
-use crate::workload::Workload;
 use crate::workflow_strategy::{WorkflowFactory, WorkflowStrategy};
+use crate::workload::Workload;
 use anyhow::Result;
 use async_trait::async_trait;
 use rand::{rngs::StdRng, Rng, SeedableRng};

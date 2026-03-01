@@ -1,6 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use bench_core::adapter::{ConnectionParams, ContainerManager, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
+use bench_core::adapter::{
+    ConnectionParams, ContainerManager, EventData, EventStoreAdapter, ReadEvent, ReadRequest,
+};
 use bench_testcontainers::umadb::{UmaDb, UMADB_PORT};
 use futures::StreamExt;
 use std::sync::Arc;
@@ -80,9 +82,7 @@ impl UmaDbAdapter {
 
         // Connect synchronously during construction
         let client = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                builder.connect_async().await
-            })
+            tokio::runtime::Handle::current().block_on(async { builder.connect_async().await })
         })?;
 
         Ok(Self {

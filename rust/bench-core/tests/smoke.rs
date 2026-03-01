@@ -2,9 +2,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bench_core::adapter::{AdapterFactory, ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest};
+use bench_core::adapter::{
+    AdapterFactory, ConnectionParams, EventData, EventStoreAdapter, ReadEvent, ReadRequest,
+};
 use bench_core::workflows::ConcurrentWritersFactory;
-use bench_core::{run_workload, RunOptions, StreamsConfig, Workload, WorkflowFactory};
+use bench_core::{run_workload, RunOptions, StreamsConfig, WorkflowFactory, Workload};
 
 struct DummyAdapter;
 
@@ -64,7 +66,9 @@ async fn run_workload_smoke() {
     let workflow_factory = ConcurrentWritersFactory;
     let workflow = workflow_factory.create(&wl, opts.seed).expect("workflow");
 
-    let res = run_workload(factory, workflow, wl, opts).await.expect("run");
+    let res = run_workload(factory, workflow, wl, opts)
+        .await
+        .expect("run");
     assert!(res.summary.events_written > 0);
     assert!(res.summary.throughput_eps > 0.0);
     assert!(!res.samples.is_empty());

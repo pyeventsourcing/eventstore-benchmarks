@@ -24,9 +24,7 @@ impl Default for KurrentDb {
                 ("KURRENTDB_MEM_DB", "false"),
                 ("KURRENTDB_TELEMETRY_OPTOUT", "true"),
             ],
-            mounts: vec![
-                Mount::volume_mount("", "/var/lib/kurrentdb")
-            ],
+            mounts: vec![Mount::volume_mount("", "/var/lib/kurrentdb")],
         }
     }
 }
@@ -55,10 +53,10 @@ impl Image for KurrentDb {
         self.env_vars.iter().map(|(k, v)| (*k, *v))
     }
 
-    fn mounts(&self) -> impl IntoIterator<Item=&Mount> {
+    fn mounts(&self) -> impl IntoIterator<Item = &Mount> {
         self.mounts.iter()
     }
-    
+
     fn expose_ports(&self) -> &[ContainerPort] {
         &[KURRENTDB_PORT]
     }

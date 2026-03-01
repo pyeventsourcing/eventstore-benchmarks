@@ -1,8 +1,8 @@
 use crate::adapter::{AdapterFactory, ConnectionParams, ContainerManager, EventStoreAdapter};
-use crate::{container_stats, metrics::ContainerMetrics};
 use crate::metrics::{RunMetrics, Summary};
-use crate::workload::Workload;
 use crate::workflow_strategy::WorkflowStrategy;
+use crate::workload::Workload;
+use crate::{container_stats, metrics::ContainerMetrics};
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -21,7 +21,8 @@ pub async fn run_workload(
     opts: RunOptions,
 ) -> Result<RunMetrics> {
     // Start container if this adapter uses one
-    let mut container_manager: Option<Box<dyn ContainerManager>> = factory.create_container_manager();
+    let mut container_manager: Option<Box<dyn ContainerManager>> =
+        factory.create_container_manager();
     let (conn_params, startup_time_s) = if let Some(ref mut cm) = container_manager {
         println!("Starting {} container...", opts.adapter_name);
         let setup_start = Instant::now();
@@ -31,8 +32,7 @@ pub async fn run_workload(
         let startup_time = setup_start.elapsed().as_secs_f64();
         println!(
             "{} container is ready after {:.2} seconds",
-            opts.adapter_name,
-            startup_time
+            opts.adapter_name, startup_time
         );
         (params, startup_time)
     } else {
@@ -42,13 +42,19 @@ pub async fn run_workload(
 
     // Run setup phase if configured (prepopulate data for read workloads)
     if let Some(setup_config) = &wl.setup {
-        println!("Running setup phase: prepopulating {} events...", setup_config.events_to_prepopulate);
+        println!(
+            "Running setup phase: prepopulating {} events...",
+            setup_config.events_to_prepopulate
+        );
         let setup_start = Instant::now();
 
         // Create a single writer for setup
         let setup_adapter = factory.create(&conn_params)?;
-        let num_streams = setup_config.prepopulate_streams.unwrap_or(wl.streams.unique_streams);
-        let events_per_stream = (setup_config.events_to_prepopulate as f64 / num_streams as f64).ceil() as u64;
+        let num_streams = setup_config
+            .prepopulate_streams
+            .unwrap_or(wl.streams.unique_streams);
+        let events_per_stream =
+            (setup_config.events_to_prepopulate as f64 / num_streams as f64).ceil() as u64;
 
         // Prepopulate events across streams
         for stream_idx in 0..num_streams {
@@ -64,7 +70,10 @@ pub async fn run_workload(
         }
 
         let setup_duration = setup_start.elapsed();
-        println!("Setup phase completed in {:.2} seconds", setup_duration.as_secs_f64());
+        println!(
+            "Setup phase completed in {:.2} seconds",
+            setup_duration.as_secs_f64()
+        );
     }
 
     // Create reader adapters if needed
@@ -105,7 +114,8 @@ pub async fn run_workload(
     // This prevents startup glitches and incomplete final buckets in plots
     let warmup_duration = Duration::from_secs(1);
     let cooldown_duration = Duration::from_secs(1);
-    let total_run_duration = Duration::from_secs(wl.duration_seconds) + warmup_duration + cooldown_duration;
+    let total_run_duration =
+        Duration::from_secs(wl.duration_seconds) + warmup_duration + cooldown_duration;
 
     let start_at = Instant::now();
     let measurement_start = start_at + warmup_duration;
@@ -136,7 +146,13 @@ pub async fn run_workload(
 
     // Delegate workload execution to the workflow strategy
     let (overall, events_written, events_read, samples_vec) = workflow
-        .execute(reader_adapters, writer_adapters, measurement_start, measurement_end, end_at)
+        .execute(
+            reader_adapters,
+            writer_adapters,
+            measurement_start,
+            measurement_end,
+            end_at,
+        )
         .await?;
 
     // Wait for stats collection to finish
