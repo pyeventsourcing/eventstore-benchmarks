@@ -86,7 +86,10 @@ fn adapter_factories() -> Vec<Box<dyn AdapterFactory>> {
 }
 
 fn workflow_factories() -> Vec<Box<dyn WorkflowFactory>> {
-    vec![Box::new(bench_core::workflows::ConcurrentWritersFactory)]
+    vec![
+        Box::new(bench_core::workflows::ConcurrentWritersFactory),
+        Box::new(bench_core::workflows::ConcurrentReadersFactory),
+    ]
 }
 
 fn main() -> Result<()> {
@@ -143,7 +146,16 @@ fn main() -> Result<()> {
             // Create workload subdirectory, then adapter run directory
             let workload_dir = output.join(wl_stem.as_ref());
             fs::create_dir_all(&workload_dir)?;
-            let run_dir = workload_dir.join(format!("{}_w{}", adapter_name, wl.writers));
+
+            // Format directory name based on workflow type
+            let run_dir_name = if wl.readers > 0 && wl.writers == 0 {
+                format!("{}_r{}", adapter_name, wl.readers)
+            } else if wl.writers > 0 && wl.readers == 0 {
+                format!("{}_w{}", adapter_name, wl.writers)
+            } else {
+                format!("{}_w{}_r{}", adapter_name, wl.writers, wl.readers)
+            };
+            let run_dir = workload_dir.join(run_dir_name);
             fs::create_dir_all(&run_dir)?;
 
             let default_uri = match adapter_name.as_str() {

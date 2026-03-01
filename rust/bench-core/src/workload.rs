@@ -8,12 +8,26 @@ pub struct StreamsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetupConfig {
+    /// Number of events to prepopulate during setup phase
+    pub events_to_prepopulate: u64,
+    /// Number of streams to distribute prepopulated events across
+    #[serde(default)]
+    pub prepopulate_streams: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workload {
     pub name: String,
     pub duration_seconds: u64,
+    #[serde(default)]
     pub writers: usize,
+    #[serde(default)]
+    pub readers: usize,
     pub event_size_bytes: usize,
     pub streams: StreamsConfig,
+    #[serde(default)]
+    pub setup: Option<SetupConfig>,
     #[serde(default)]
     pub conflict_rate: Option<f64>,
     #[serde(default)]

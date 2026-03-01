@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-#WRITERS=(1 2 4 8 16)
 WRITERS=(4 8)
+READERS=(4 8)
 #STORES=("umadb" "kurrentdb" "axonserver" "eventsourcingdb")
 STORES=("umadb" "kurrentdb")
-WORKFLOWS=("concurrent_writers")
-WORKLOAD_TEMPLATE="workloads/concurrent_writers.yaml"
 RAW_DIR="results/raw"
 PUBLISHED_DIR="results/published"
 
@@ -15,26 +13,50 @@ cargo build --release -p esbs
 # Clean previous results
 rm -rf "$RAW_DIR" "$PUBLISHED_DIR"
 
-for workflow in "${WORKFLOWS[@]}"; do
-  for w in "${WRITERS[@]}"; do
-    # Generate a per-count workload YAML on the fly
-    WORKLOAD_FILE="workloads/${workflow}_w${w}.yaml"
-    sed "s/^writers:.*/writers: ${w}/" "$WORKLOAD_TEMPLATE" \
-      | sed "s/^name:.*/name: ${workflow}_w${w}/" \
-      > "$WORKLOAD_FILE"
+# Run concurrent_writers workflow with different writer counts
+WORKFLOW="concurrent_writers"
+WORKLOAD_TEMPLATE="workloads/concurrent_writers.yaml"
+for w in "${WRITERS[@]}"; do
+  # Generate a per-count workload YAML on the fly
+  WORKLOAD_FILE="workloads/${WORKFLOW}_w${w}.yaml"
+  sed "s/^writers:.*/writers: ${w}/" "$WORKLOAD_TEMPLATE" \
+    | sed "s/^name:.*/name: ${WORKFLOW}_w${w}/" \
+    > "$WORKLOAD_FILE"
 
-    for store in "${STORES[@]}"; do
-      echo "=== Running $store with workflow $workflow and $w writers ==="
-      ./target/release/esbs run \
-        --store "$store" \
-        --workflow "$workflow" \
-        --workload "$WORKLOAD_FILE" \
-        --output "$RAW_DIR"
-    done
-
-    # Clean up generated workload file
-    rm -f "$WORKLOAD_FILE"
+  for store in "${STORES[@]}"; do
+    echo "=== Running $store with workflow $WORKFLOW and $w writers ==="
+    ./target/release/esbs run \
+      --store "$store" \
+      --workflow "$WORKFLOW" \
+      --workload "$WORKLOAD_FILE" \
+      --output "$RAW_DIR"
   done
+
+  # Clean up generated workload file
+  rm -f "$WORKLOAD_FILE"
+done
+
+# Run concurrent_readers workflow with different reader counts
+WORKFLOW="concurrent_readers"
+WORKLOAD_TEMPLATE="workloads/concurrent_readers.yaml"
+for r in "${READERS[@]}"; do
+  # Generate a per-count workload YAML on the fly
+  WORKLOAD_FILE="workloads/${WORKFLOW}_r${r}.yaml"
+  sed "s/^readers:.*/readers: ${r}/" "$WORKLOAD_TEMPLATE" \
+    | sed "s/^name:.*/name: ${WORKFLOW}_r${r}/" \
+    > "$WORKLOAD_FILE"
+
+  for store in "${STORES[@]}"; do
+    echo "=== Running $store with workflow $WORKFLOW and $r readers ==="
+    ./target/release/esbs run \
+      --store "$store" \
+      --workflow "$WORKFLOW" \
+      --workload "$WORKLOAD_FILE" \
+      --output "$RAW_DIR"
+  done
+
+  # Clean up generated workload file
+  rm -f "$WORKLOAD_FILE"
 done
 
 # Generate consolidated report

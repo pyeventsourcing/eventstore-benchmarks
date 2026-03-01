@@ -40,7 +40,51 @@ pub async fn run_workload(
         (opts.conn.clone(), 0.0)
     };
 
-    // Create one adapter per writer for true concurrency
+    // Run setup phase if configured (prepopulate data for read workloads)
+    if let Some(setup_config) = &wl.setup {
+        println!("Running setup phase: prepopulating {} events...", setup_config.events_to_prepopulate);
+        let setup_start = Instant::now();
+
+        // Create a single writer for setup
+        let setup_adapter = factory.create(&conn_params)?;
+        let num_streams = setup_config.prepopulate_streams.unwrap_or(wl.streams.unique_streams);
+        let events_per_stream = (setup_config.events_to_prepopulate as f64 / num_streams as f64).ceil() as u64;
+
+        // Prepopulate events across streams
+        for stream_idx in 0..num_streams {
+            for _ in 0..events_per_stream {
+                let evt = crate::adapter::EventData {
+                    stream: format!("stream-{}", stream_idx),
+                    event_type: "setup".to_string(),
+                    payload: vec![0u8; wl.event_size_bytes],
+                    tags: vec![],
+                };
+                setup_adapter.append(evt).await?;
+            }
+        }
+
+        let setup_duration = setup_start.elapsed();
+        println!("Setup phase completed in {:.2} seconds", setup_duration.as_secs_f64());
+    }
+
+    // Create reader adapters if needed
+    println!("Creating {} reader clients...", wl.readers);
+    let mut reader_adapters: Vec<Arc<dyn EventStoreAdapter>> = Vec::new();
+    for i in 0..wl.readers {
+        match factory.create(&conn_params) {
+            Ok(adapter) => reader_adapters.push(adapter.into()),
+            Err(e) => {
+                eprintln!("Failed to create reader {}: {}", i, e);
+                if let Some(ref mut cm) = container_manager {
+                    cm.stop().await?;
+                }
+                anyhow::bail!("Failed to create reader {}: {}", i, e);
+            }
+        }
+    }
+    println!("All {} reader clients ready", wl.readers);
+
+    // Create writer adapters if needed
     println!("Creating {} writer clients...", wl.writers);
     let mut writer_adapters: Vec<Arc<dyn EventStoreAdapter>> = Vec::new();
     for i in 0..wl.writers {
@@ -91,8 +135,8 @@ pub async fn run_workload(
     });
 
     // Delegate workload execution to the workflow strategy
-    let (overall, events_written, samples_vec) = workflow
-        .execute(writer_adapters, measurement_start, measurement_end, end_at)
+    let (overall, events_written, events_read, samples_vec) = workflow
+        .execute(reader_adapters, writer_adapters, measurement_start, measurement_end, end_at)
         .await?;
 
     // Wait for stats collection to finish
@@ -135,14 +179,16 @@ pub async fn run_workload(
     }
 
     let dur_s = wl.duration_seconds as f64;
+    let total_ops = events_written + events_read;
     let summary = Summary {
         workload: wl.name,
         adapter: opts.adapter_name,
         writers: wl.writers,
+        readers: wl.readers,
         events_written,
-        events_read: 0,
+        events_read,
         duration_s: dur_s,
-        throughput_eps: (events_written as f64) / dur_s.max(0.001),
+        throughput_eps: (total_ops as f64) / dur_s.max(0.001),
         latency: overall.to_stats(),
         container: container_metrics,
     };

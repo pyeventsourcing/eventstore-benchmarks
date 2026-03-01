@@ -12,14 +12,15 @@ use std::time::Instant;
 #[async_trait]
 pub trait WorkflowStrategy: Send + Sync {
     /// Execute the workflow using the provided adapters and timing windows.
-    /// Returns a tuple of (LatencyRecorder, events_written, samples).
+    /// Returns a tuple of (LatencyRecorder, events_written, events_read, samples).
     async fn execute(
         &self,
+        reader_adapters: Vec<Arc<dyn EventStoreAdapter>>,
         writer_adapters: Vec<Arc<dyn EventStoreAdapter>>,
         measurement_start: Instant,
         measurement_end: Instant,
         end_at: Instant,
-    ) -> Result<(LatencyRecorder, u64, Vec<RawSample>)>;
+    ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)>;
 }
 
 /// Factory for creating workflow strategy instances from configuration

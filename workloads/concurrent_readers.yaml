@@ -1,0 +1,10 @@
+name: concurrent_readers
+duration_seconds: 6
+readers: 4
+event_size_bytes: 256
+streams:
+  distribution: uniform
+  unique_streams: 10000
+setup:
+  events_to_prepopulate: 100000
+  prepopulate_streams: 10000

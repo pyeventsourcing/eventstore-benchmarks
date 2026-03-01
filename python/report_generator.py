@@ -240,18 +240,20 @@ def plot_comparison_throughput(run_data, title, out_path: Path, data_path: Path 
 
 
 def plot_throughput_scaling(runs, out_path: Path):
-    """Plot throughput vs writer count, one line per adapter.
+    """Plot throughput vs worker count (writers or readers), one line per adapter.
 
     Computes throughput from raw samples, filtering by 'ok' status and
     excluding first and last time groups to avoid warm-up/cool-down artifacts.
     """
-    # Group by adapter → list of (writers, throughput)
+    # Group by adapter → list of (worker_count, throughput)
     adapter_data = defaultdict(list)
 
     for run in runs:
         s = run["summary"]
         adapter = s["adapter"]
-        writers = s.get("writers", 1)
+        writers = s.get("writers", 0)
+        readers = s.get("readers", 0)
+        worker_count = writers if writers > 0 else readers
 
         # Compute throughput from raw samples for better accuracy
         samples_df = pd.DataFrame(run["samples"])
@@ -282,7 +284,13 @@ def plot_throughput_scaling(runs, out_path: Path):
         # Use median throughput for more robust estimate
         throughput = eps.median()
 
-        adapter_data[adapter].append((writers, throughput))
+        adapter_data[adapter].append((worker_count, throughput))
+
+    # Determine label based on workflow type
+    first_run = runs[0]["summary"] if runs else {}
+    is_readers = first_run.get("readers", 0) > 0 and first_run.get("writers", 0) == 0
+    xlabel = "Readers" if is_readers else "Writers"
+    title = f"Throughput Scaling by {xlabel[:-1]} Count"
 
     plt.figure(figsize=(8, 5))
     for adapter, points in sorted(adapter_data.items()):
@@ -295,26 +303,38 @@ def plot_throughput_scaling(runs, out_path: Path):
         plt.plot(ws, tps, marker="o", label=adapter, color=color,
                 linewidth=2.5, markersize=8, linestyle='-', alpha=0.9)
 
-    plt.xlabel("Writers")
+    plt.xlabel(xlabel)
     plt.ylabel("Throughput (events/sec)")
-    plt.title("Throughput Scaling by Writer Count")
+    plt.title(title)
     plt.legend()
     plt.grid(True, ls=":", alpha=0.6)
-    plt.xticks(sorted({s["summary"].get("writers", 1) for s in runs}))
+    all_worker_counts = sorted({
+        (s["summary"].get("writers", 0) if s["summary"].get("writers", 0) > 0
+         else s["summary"].get("readers", 0)) for s in runs
+    })
+    plt.xticks(all_worker_counts)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()
 
 
 def plot_p99_scaling(runs, out_path: Path):
-    """Plot p99 latency vs writer count, one line per adapter."""
+    """Plot p99 latency vs worker count (writers or readers), one line per adapter."""
     adapter_data = defaultdict(list)
     for run in runs:
         s = run["summary"]
         adapter = s["adapter"]
-        writers = s.get("writers", 1)
+        writers = s.get("writers", 0)
+        readers = s.get("readers", 0)
+        worker_count = writers if writers > 0 else readers
         p99 = s["latency"]["p99_ms"]
-        adapter_data[adapter].append((writers, p99))
+        adapter_data[adapter].append((worker_count, p99))
+
+    # Determine label based on workflow type
+    first_run = runs[0]["summary"] if runs else {}
+    is_readers = first_run.get("readers", 0) > 0 and first_run.get("writers", 0) == 0
+    xlabel = "Readers" if is_readers else "Writers"
+    title = f"p99 Latency Scaling by {xlabel[:-1]} Count"
 
     plt.figure(figsize=(8, 5))
     for adapter, points in sorted(adapter_data.items()):
@@ -323,12 +343,16 @@ def plot_p99_scaling(runs, out_path: Path):
         p99s = [p[1] for p in points]
         color = get_adapter_color(adapter)
         plt.plot(ws, p99s, marker="o", label=adapter, color=color, linewidth=2, markersize=8)
-    plt.xlabel("Writers")
+    plt.xlabel(xlabel)
     plt.ylabel("p99 Latency (ms)")
-    plt.title("p99 Latency Scaling by Writer Count")
+    plt.title(title)
     plt.legend()
     plt.grid(True, ls=":")
-    plt.xticks(sorted({s["summary"].get("writers", 1) for s in runs}))
+    all_worker_counts = sorted({
+        (s["summary"].get("writers", 0) if s["summary"].get("writers", 0) > 0
+         else s["summary"].get("readers", 0)) for s in runs
+    })
+    plt.xticks(all_worker_counts)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()
@@ -507,9 +531,19 @@ def generate_workflow_html(out_base: Path, workflow_name: str, runs, writer_grou
         s = run["summary"]
         adapter = s["adapter"]
         workload = Path(s["workload"]).stem
-        writers = s.get("writers", "?")
-        # Link is relative to the workflow subdirectory, so need to go up one level
-        report_link = f"../{workload}/report-{adapter}_w{writers}/index.html"
+        writers = s.get("writers", 0)
+        readers = s.get("readers", 0)
+
+        # Determine link format based on workflow type
+        if readers > 0 and writers == 0:
+            report_link = f"../{workload}/report-{adapter}_r{readers}/index.html"
+            worker_display = readers
+        elif writers > 0 and readers == 0:
+            report_link = f"../{workload}/report-{adapter}_w{writers}/index.html"
+            worker_display = writers
+        else:
+            report_link = f"../{workload}/report-{adapter}_w{writers}_r{readers}/index.html"
+            worker_display = f"{writers}w/{readers}r"
 
         # Get container metrics
         container = s.get("container", {})
@@ -538,7 +572,7 @@ def generate_workflow_html(out_base: Path, workflow_name: str, runs, writer_grou
       <tr>
         <td><a href='{report_link}'>{adapter}</a></td>
         <td>{workload}</td>
-        <td>{writers}</td>
+        <td>{worker_display}</td>
         <td>{s['duration_s']:.1f}s</td>
         <td>{s['throughput_eps']:.0f}</td>
         <td>{s['latency']['p50_ms']:.2f}</td>
@@ -549,19 +583,25 @@ def generate_workflow_html(out_base: Path, workflow_name: str, runs, writer_grou
         <td>{mem_display}</td>
       </tr>"""
 
-    # Per-writer-count comparison sections
+    # Per-worker-count comparison sections
+    # Determine if this is a readers or writers workflow
+    first_run = runs[0]["summary"] if runs else {}
+    is_readers = first_run.get("readers", 0) > 0 and first_run.get("writers", 0) == 0
+    worker_label = "Readers" if is_readers else "Writers"
+    worker_suffix = "r" if is_readers else "w"
+
     comparison_sections = ""
     for wc in sorted(writer_groups.keys()):
         comparison_sections += f"""
-    <h2>Writers = {wc}</h2>
+    <h2>{worker_label} = {wc}</h2>
     <div class='row'>
       <div class='card'>
         <h3>Latency CDF</h3>
-        <img src='{workflow_name}_comparison_w{wc}_latency_cdf.png' width='560'>
+        <img src='{workflow_name}_comparison_{worker_suffix}{wc}_latency_cdf.png' width='560'>
       </div>
       <div class='card'>
         <h3>Throughput over time</h3>
-        <img src='{workflow_name}_comparison_w{wc}_throughput.png' width='560'>
+        <img src='{workflow_name}_comparison_{worker_suffix}{wc}_throughput.png' width='560'>
       </div>
     </div>"""
 
@@ -612,7 +652,7 @@ def generate_workflow_html(out_base: Path, workflow_name: str, runs, writer_grou
   {comparison_sections}
   <h2>Summary</h2>
   <table>
-    <tr><th>Adapter</th><th>Workload</th><th>Writers</th><th>Duration</th><th>Throughput (eps)</th><th>p50 (ms)</th><th>p99 (ms)</th><th>Image (MB)</th><th>Startup</th><th>CPU (avg/peak)</th><th>Mem MB (avg/peak)</th></tr>
+    <tr><th>Adapter</th><th>Workload</th><th>{worker_label}</th><th>Duration</th><th>Throughput (eps)</th><th>p50 (ms)</th><th>p99 (ms)</th><th>Image (MB)</th><th>Startup</th><th>CPU (avg/peak)</th><th>Mem MB (avg/peak)</th></tr>
     {summary_rows}
   </table>
 </body>
@@ -687,9 +727,13 @@ def generate_top_level_index(out_base: Path, workflow_summaries):
 
 
 def extract_workflow_name(workload_name: str) -> str:
-    """Extract workflow name from workload name (e.g., 'concurrent_writers_w4' -> 'concurrent_writers')."""
+    """Extract workflow name from workload name (e.g., 'concurrent_writers_w4' -> 'concurrent_writers', 'concurrent_readers_r8' -> 'concurrent_readers')."""
     # Remove _w{N} suffix if present
     parts = workload_name.rsplit('_w', 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return parts[0]
+    # Remove _r{N} suffix if present
+    parts = workload_name.rsplit('_r', 1)
     if len(parts) == 2 and parts[1].isdigit():
         return parts[0]
     return workload_name
@@ -716,12 +760,21 @@ def main():
         run["_samples_df"] = samples_df
         adapter = run["summary"]["adapter"]
         workload = Path(run["summary"]["workload"]).stem
-        writers = run["summary"].get("writers", 1)
+        writers = run["summary"].get("writers", 0)
+        readers = run["summary"].get("readers", 0)
 
-        # Create workload subdirectory, then report directory
+        # Create workload subdirectory, then report directory with correct naming
         workload_dir = out_base / workload
         workload_dir.mkdir(parents=True, exist_ok=True)
-        report_dir = workload_dir / f"report-{adapter}_w{writers}"
+
+        # Format directory name based on workflow type
+        if readers > 0 and writers == 0:
+            report_dir_name = f"report-{adapter}_r{readers}"
+        elif writers > 0 and readers == 0:
+            report_dir_name = f"report-{adapter}_w{writers}"
+        else:
+            report_dir_name = f"report-{adapter}_w{writers}_r{readers}"
+        report_dir = workload_dir / report_dir_name
         report_dir.mkdir(parents=True, exist_ok=True)
 
         plot_latency_cdf(samples_df, report_dir / "latency_cdf.png")
@@ -741,33 +794,41 @@ def main():
     for workflow_name, workflow_runs in workflow_groups.items():
         print(f"\nProcessing workflow: {workflow_name}")
 
-        # Group runs by writer count for this workflow
+        # Group runs by worker count (writers or readers) for this workflow
         writer_groups = defaultdict(list)
         adapters_set = set()
         writer_counts_set = set()
 
+        # Determine if this is a readers or writers workflow
+        first_run = workflow_runs[0]["summary"] if workflow_runs else {}
+        is_readers = first_run.get("readers", 0) > 0 and first_run.get("writers", 0) == 0
+        worker_label = "reader" if is_readers else "writer"
+        worker_suffix = "r" if is_readers else "w"
+
         for run in workflow_runs:
-            wc = run["summary"].get("writers", 1)
+            writers = run["summary"].get("writers", 0)
+            readers = run["summary"].get("readers", 0)
+            wc = readers if is_readers else writers
             adapter = run["summary"]["adapter"]
             writer_groups[wc].append((adapter, run["_samples_df"]))
             adapters_set.add(adapter)
             writer_counts_set.add(wc)
 
-        # Generate per-writer-count comparison charts for this workflow
+        # Generate per-worker-count comparison charts for this workflow
         workflow_dir = out_base / workflow_name
         workflow_dir.mkdir(parents=True, exist_ok=True)
 
         for wc, run_data in sorted(writer_groups.items()):
             plot_comparison_latency_cdf(
                 run_data,
-                f"Latency CDF — {wc} writer(s)",
-                workflow_dir / f"{workflow_name}_comparison_w{wc}_latency_cdf.png",
+                f"Latency CDF — {wc} {worker_label}(s)",
+                workflow_dir / f"{workflow_name}_comparison_{worker_suffix}{wc}_latency_cdf.png",
             )
             plot_comparison_throughput(
                 run_data,
-                f"Throughput — {wc} writer(s)",
-                workflow_dir / f"{workflow_name}_comparison_w{wc}_throughput.png",
-                workflow_dir / f"{workflow_name}_comparison_w{wc}_throughput_data.json",
+                f"Throughput — {wc} {worker_label}(s)",
+                workflow_dir / f"{workflow_name}_comparison_{worker_suffix}{wc}_throughput.png",
+                workflow_dir / f"{workflow_name}_comparison_{worker_suffix}{wc}_throughput_data.json",
             )
 
         # Generate scaling summary charts for this workflow (if multiple writer counts)
