@@ -140,14 +140,15 @@ def plot_throughput(samples: pd.DataFrame, out_path: Path, data_path: Path = Non
     if result is None:
         return
 
-    # Save computed data if path provided
+    # Save computed data as JSON if path provided
     if data_path:
-        np.savez(
-            data_path,
-            time_s=result["time_s"],
-            throughput_eps=result["throughput_eps"],
-            throughput_eps_smooth=result["throughput_eps_smooth"],
-        )
+        data = {
+            "time_s": result["time_s"].tolist(),
+            "throughput_eps": result["throughput_eps"].tolist(),
+            "throughput_eps_smooth": result["throughput_eps_smooth"].tolist(),
+        }
+        with open(data_path, 'w') as f:
+            json.dump(data, f, indent=2)
 
     plt.figure(figsize=(6, 4))
     # Plot raw data with thin line
@@ -203,24 +204,23 @@ def plot_comparison_throughput(run_data, title, out_path: Path, data_path: Path 
         color = get_adapter_color(label)
         # Plot raw data with thin line
         plt.plot(result["time_s"], result["throughput_eps"],
-                linewidth=0.5, alpha=0.4, color=color)
+                linewidth=0.5, alpha=0.2, color=color)
         # Plot smoothed data with thick line
         plt.plot(result["time_s"], result["throughput_eps_smooth"],
                 label=label, color=color, linewidth=2.5, alpha=0.9)
 
         # Store data
         if data_path:
-            all_data[label] = result
+            all_data[label] = {
+                "time_s": result["time_s"].tolist(),
+                "throughput_eps": result["throughput_eps"].tolist(),
+                "throughput_eps_smooth": result["throughput_eps_smooth"].tolist(),
+            }
 
-    # Save combined data if path provided
+    # Save combined data as JSON if path provided
     if data_path and all_data:
-        # Save as npz with one array per adapter
-        save_dict = {}
-        for label, result in all_data.items():
-            save_dict[f"{label}_time_s"] = result["time_s"]
-            save_dict[f"{label}_throughput_eps"] = result["throughput_eps"]
-            save_dict[f"{label}_throughput_eps_smooth"] = result["throughput_eps_smooth"]
-        np.savez(data_path, **save_dict)
+        with open(data_path, 'w') as f:
+            json.dump(all_data, f, indent=2)
 
     plt.xlabel("Time (s)")
     plt.ylabel("Events/sec")
@@ -409,7 +409,7 @@ def plot_container_metrics(runs, out_path: Path):
     ax1.set_ylabel("Image Size (MB)", fontweight='bold')
     ax1.set_title("Container Image Size", fontweight='bold')
     ax1.grid(True, alpha=0.3, axis='y')
-    ax1.set_xticklabels(adapters, rotation=45, ha='right')
+    # ax1.set_xticklabels(adapters, rotation=45, ha='right')
     for bar, v in zip(bars1, image_sizes):
         height = bar.get_height()
         ax1.text(bar.get_x() + bar.get_width()/2., height,
@@ -420,7 +420,7 @@ def plot_container_metrics(runs, out_path: Path):
     ax2.set_ylabel("Startup Time (seconds)", fontweight='bold')
     ax2.set_title("Container Startup Time", fontweight='bold')
     ax2.grid(True, alpha=0.3, axis='y')
-    ax2.set_xticklabels(adapters, rotation=45, ha='right')
+    # ax2.set_xticklabels(adapters, rotation=45, ha='right')
     for bar, v in zip(bars2, startup_times):
         height = bar.get_height()
         ax2.text(bar.get_x() + bar.get_width()/2., height,
@@ -431,7 +431,7 @@ def plot_container_metrics(runs, out_path: Path):
     ax3.set_ylabel("Peak CPU (%)", fontweight='bold')
     ax3.set_title("Peak CPU Usage", fontweight='bold')
     ax3.grid(True, alpha=0.3, axis='y')
-    ax3.set_xticklabels(adapters, rotation=45, ha='right')
+    # ax3.set_xticklabels(adapters, rotation=45, ha='right')
     for bar, v in zip(bars3, peak_cpus):
         height = bar.get_height()
         ax3.text(bar.get_x() + bar.get_width()/2., height,
@@ -442,7 +442,7 @@ def plot_container_metrics(runs, out_path: Path):
     ax4.set_ylabel("Peak Memory (MB)", fontweight='bold')
     ax4.set_title("Peak Memory Usage", fontweight='bold')
     ax4.grid(True, alpha=0.3, axis='y')
-    ax4.set_xticklabels(adapters, rotation=45, ha='right')
+    # ax4.set_xticklabels(adapters, rotation=45, ha='right')
     for bar, v in zip(bars4, peak_mems):
         height = bar.get_height()
         ax4.text(bar.get_x() + bar.get_width()/2., height,
@@ -638,7 +638,7 @@ def main():
         report_dir.mkdir(parents=True, exist_ok=True)
 
         plot_latency_cdf(samples_df, report_dir / "latency_cdf.png")
-        plot_throughput(samples_df, report_dir / "throughput.png", report_dir / "throughput_data.npz")
+        plot_throughput(samples_df, report_dir / "throughput.png", report_dir / "throughput_data.json")
         generate_html(report_dir, run)
         print(f"Report written to {report_dir}/index.html")
 
@@ -661,7 +661,7 @@ def main():
                 run_data,
                 f"Throughput — {wc} writer(s)",
                 out_base / f"comparison_w{wc}_throughput.png",
-                out_base / f"comparison_w{wc}_throughput_data.npz",
+                out_base / f"comparison_w{wc}_throughput_data.json",
             )
         elif len(run_data) == 1:
             # Single store at this writer count — still generate charts for consistency
@@ -674,7 +674,7 @@ def main():
                 run_data,
                 f"Throughput — {wc} writer(s)",
                 out_base / f"comparison_w{wc}_throughput.png",
-                out_base / f"comparison_w{wc}_throughput_data.npz",
+                out_base / f"comparison_w{wc}_throughput_data.json",
             )
 
     # Generate scaling summary charts (throughput & p99 vs writers)
