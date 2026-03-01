@@ -499,7 +499,8 @@ def generate_html(report_dir: Path, run):
         f.write(html)
 
 
-def generate_consolidated_html(out_base: Path, runs, writer_groups):
+def generate_workflow_html(out_base: Path, workflow_name: str, runs, writer_groups):
+    """Generate a consolidated report for a specific workflow."""
     # Summary table
     summary_rows = ""
     for run in runs:
@@ -507,7 +508,8 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
         adapter = s["adapter"]
         workload = Path(s["workload"]).stem
         writers = s.get("writers", "?")
-        report_link = f"{workload}/report-{adapter}_w{writers}/index.html"
+        # Link is relative to the workflow subdirectory, so need to go up one level
+        report_link = f"../{workload}/report-{adapter}_w{writers}/index.html"
 
         # Get container metrics
         container = s.get("container", {})
@@ -555,34 +557,34 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
     <div class='row'>
       <div class='card'>
         <h3>Latency CDF</h3>
-        <img src='comparison_w{wc}_latency_cdf.png' width='560'>
+        <img src='{workflow_name}_comparison_w{wc}_latency_cdf.png' width='560'>
       </div>
       <div class='card'>
         <h3>Throughput over time</h3>
-        <img src='comparison_w{wc}_throughput.png' width='560'>
+        <img src='{workflow_name}_comparison_w{wc}_throughput.png' width='560'>
       </div>
     </div>"""
 
     # Container metrics section
-    container_section = """
+    container_section = f"""
     <h2>Container Resource Metrics</h2>
     <div class='card' style='max-width: 100%;'>
-      <img src='container_metrics.png' style='width: 100%; max-width: 1200px;'>
+      <img src='{workflow_name}_container_metrics.png' style='width: 100%; max-width: 1200px;'>
     </div>"""
 
     # Scaling charts (only if multiple writer counts)
     scaling_section = ""
     if len(writer_groups) > 1:
-        scaling_section = """
+        scaling_section = f"""
     <h2>Scaling</h2>
     <div class='row'>
       <div class='card'>
         <h3>Throughput vs Writers</h3>
-        <img src='scaling_throughput.png' width='560'>
+        <img src='{workflow_name}_scaling_throughput.png' width='560'>
       </div>
       <div class='card'>
         <h3>p99 Latency vs Writers</h3>
-        <img src='scaling_p99.png' width='560'>
+        <img src='{workflow_name}_scaling_p99.png' width='560'>
       </div>
     </div>"""
 
@@ -591,7 +593,7 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
 <html>
 <head>
   <meta charset='utf-8'>
-  <title>ESBS Consolidated Report</title>
+  <title>ESBS Report — {workflow_name}</title>
   <style>
     body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }}
     h1, h2, h3 {{ margin-top: 1.2rem; }}
@@ -603,7 +605,8 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
   </style>
 </head>
 <body>
-  <h1>ESBS Consolidated Report</h1>
+  <h1>ESBS Report — {workflow_name}</h1>
+  <p><a href="../index.html">← Back to all workflows</a></p>
   {container_section}
   {scaling_section}
   {comparison_sections}
@@ -615,8 +618,81 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
 </body>
 </html>
 """
+    workflow_dir = out_base / workflow_name
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    with open(workflow_dir / "index.html", "w") as f:
+        f.write(html)
+
+
+def generate_top_level_index(out_base: Path, workflow_summaries):
+    """Generate top-level index.html that links to individual workflow reports."""
+
+    workflow_sections = ""
+    for workflow_name, summary in sorted(workflow_summaries.items()):
+        # Include scaling plots if this workflow has multiple writer counts
+        scaling_plots = ""
+        if len(summary['writer_counts']) > 1:
+            scaling_plots = f"""
+      <div class='row'>
+        <div class='card'>
+          <h3>Throughput Scaling</h3>
+          <img src='{workflow_name}/{workflow_name}_scaling_throughput.png' width='460'>
+        </div>
+        <div class='card'>
+          <h3>p99 Latency Scaling</h3>
+          <img src='{workflow_name}/{workflow_name}_scaling_p99.png' width='460'>
+        </div>
+      </div>"""
+
+        workflow_sections += f"""
+    <div class='workflow-section'>
+      <h2><a href='{workflow_name}/index.html'>{workflow_name}</a></h2>
+      <div class='workflow-info'>
+        <p><b>Runs:</b> {summary['run_count']}</p>
+        <p><b>Adapters tested:</b> {', '.join(sorted(summary['adapters']))}</p>
+        <p><b>Writer counts:</b> {', '.join(map(str, sorted(summary['writer_counts'])))}</p>
+      </div>
+      {scaling_plots}
+    </div>"""
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <title>ESBS Benchmark Suite</title>
+  <style>
+    body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }}
+    h1, h2, h3 {{ margin-top: 1.2rem; }}
+    .workflow-section {{ border: 1px solid #ddd; border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0; background: #fafafa; }}
+    .workflow-section h2 {{ margin-top: 0; }}
+    .workflow-info {{ margin: 0.5rem 0 1rem 0; }}
+    .workflow-info p {{ margin: 0.25rem 0; }}
+    .row {{ display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; }}
+    .card {{ border: 1px solid #eee; border-radius: 8px; padding: 1rem; background: white; }}
+    .card h3 {{ margin-top: 0; font-size: 1rem; }}
+    a {{ color: #0066cc; text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+  </style>
+</head>
+<body>
+  <h1>Event Store Benchmark Suite</h1>
+  <p>Select a workflow to view detailed benchmark results:</p>
+  {workflow_sections}
+</body>
+</html>
+"""
     with open(out_base / "index.html", "w") as f:
         f.write(html)
+
+
+def extract_workflow_name(workload_name: str) -> str:
+    """Extract workflow name from workload name (e.g., 'concurrent_writers_w4' -> 'concurrent_writers')."""
+    # Remove _w{N} suffix if present
+    parts = workload_name.rsplit('_w', 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return parts[0]
+    return workload_name
 
 
 def main():
@@ -653,51 +729,69 @@ def main():
         generate_html(report_dir, run)
         print(f"Report written to {report_dir}/index.html")
 
-    # Group runs by writer count for per-group comparison charts
-    writer_groups = defaultdict(list)
+    # Group runs by workflow
+    workflow_groups = defaultdict(list)
     for run in runs:
-        wc = run["summary"].get("writers", 1)
-        adapter = run["summary"]["adapter"]
-        writer_groups[wc].append((adapter, run["_samples_df"]))
+        workload = Path(run["summary"]["workload"]).stem
+        workflow = extract_workflow_name(workload)
+        workflow_groups[workflow].append(run)
 
-    # Generate per-writer-count comparison charts
-    for wc, run_data in sorted(writer_groups.items()):
-        if len(run_data) > 1:
+    # Generate per-workflow consolidated reports
+    workflow_summaries = {}
+    for workflow_name, workflow_runs in workflow_groups.items():
+        print(f"\nProcessing workflow: {workflow_name}")
+
+        # Group runs by writer count for this workflow
+        writer_groups = defaultdict(list)
+        adapters_set = set()
+        writer_counts_set = set()
+
+        for run in workflow_runs:
+            wc = run["summary"].get("writers", 1)
+            adapter = run["summary"]["adapter"]
+            writer_groups[wc].append((adapter, run["_samples_df"]))
+            adapters_set.add(adapter)
+            writer_counts_set.add(wc)
+
+        # Generate per-writer-count comparison charts for this workflow
+        workflow_dir = out_base / workflow_name
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+
+        for wc, run_data in sorted(writer_groups.items()):
             plot_comparison_latency_cdf(
                 run_data,
                 f"Latency CDF — {wc} writer(s)",
-                out_base / f"comparison_w{wc}_latency_cdf.png",
+                workflow_dir / f"{workflow_name}_comparison_w{wc}_latency_cdf.png",
             )
             plot_comparison_throughput(
                 run_data,
                 f"Throughput — {wc} writer(s)",
-                out_base / f"comparison_w{wc}_throughput.png",
-                out_base / f"comparison_w{wc}_throughput_data.json",
-            )
-        elif len(run_data) == 1:
-            # Single store at this writer count — still generate charts for consistency
-            plot_comparison_latency_cdf(
-                run_data,
-                f"Latency CDF — {wc} writer(s)",
-                out_base / f"comparison_w{wc}_latency_cdf.png",
-            )
-            plot_comparison_throughput(
-                run_data,
-                f"Throughput — {wc} writer(s)",
-                out_base / f"comparison_w{wc}_throughput.png",
-                out_base / f"comparison_w{wc}_throughput_data.json",
+                workflow_dir / f"{workflow_name}_comparison_w{wc}_throughput.png",
+                workflow_dir / f"{workflow_name}_comparison_w{wc}_throughput_data.json",
             )
 
-    # Generate scaling summary charts (throughput & p99 vs writers)
-    if len(writer_groups) > 1:
-        plot_throughput_scaling(runs, out_base / "scaling_throughput.png")
-        plot_p99_scaling(runs, out_base / "scaling_p99.png")
+        # Generate scaling summary charts for this workflow (if multiple writer counts)
+        if len(writer_groups) > 1:
+            plot_throughput_scaling(workflow_runs, workflow_dir / f"{workflow_name}_scaling_throughput.png")
+            plot_p99_scaling(workflow_runs, workflow_dir / f"{workflow_name}_scaling_p99.png")
 
-    # Generate container metrics visualization
-    plot_container_metrics(runs, out_base / "container_metrics.png")
+        # Generate container metrics visualization for this workflow
+        plot_container_metrics(workflow_runs, workflow_dir / f"{workflow_name}_container_metrics.png")
 
-    generate_consolidated_html(out_base, runs, writer_groups)
-    print(f"Consolidated report written to {out_base}/index.html")
+        # Generate consolidated HTML for this workflow
+        generate_workflow_html(out_base, workflow_name, workflow_runs, writer_groups)
+        print(f"Workflow report written to {workflow_dir}/index.html")
+
+        # Store summary for top-level index
+        workflow_summaries[workflow_name] = {
+            'run_count': len(workflow_runs),
+            'adapters': adapters_set,
+            'writer_counts': writer_counts_set,
+        }
+
+    # Generate top-level index
+    generate_top_level_index(out_base, workflow_summaries)
+    print(f"\nTop-level index written to {out_base}/index.html")
 
 
 if __name__ == "__main__":
