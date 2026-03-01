@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bench_core::adapter::ConnectionParams;
-use bench_core::{run_workload, AdapterFactory, RunOptions, WorkloadFile};
+use bench_core::{run_workload, AdapterFactory, RunOptions, WorkflowFactory, WorkloadFile};
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::fs;
@@ -25,6 +25,9 @@ enum Commands {
         /// Store adapter name (e.g., umadb)
         #[arg(long)]
         store: String,
+        /// Workflow name (e.g., concurrent_writers)
+        #[arg(long, default_value = "concurrent_writers")]
+        workflow: String,
         /// Path to workload YAML
         #[arg(long)]
         workload: PathBuf,
@@ -48,6 +51,8 @@ enum Commands {
     },
     /// List available store adapters
     ListStores,
+    /// List available workflow types
+    ListWorkflows,
 }
 
 fn parse_key_val<K, V>(s: &str) -> std::result::Result<(K, V), String>
@@ -80,6 +85,10 @@ fn adapter_factories() -> Vec<Box<dyn AdapterFactory>> {
     ]
 }
 
+fn workflow_factories() -> Vec<Box<dyn WorkflowFactory>> {
+    vec![Box::new(bench_core::workflows::ConcurrentWritersFactory)]
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -99,6 +108,13 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Commands::ListWorkflows => {
+            let workflow_factories_vec = workflow_factories();
+            for f in &workflow_factories_vec {
+                println!("{}", f.name());
+            }
+            Ok(())
+        }
         Commands::ListWorkloads { path } => {
             for entry in fs::read_dir(path)? {
                 let entry = entry?;
@@ -111,6 +127,7 @@ fn main() -> Result<()> {
         }
         Commands::Run {
             store,
+            workflow,
             workload,
             output,
             uri,
@@ -120,9 +137,13 @@ fn main() -> Result<()> {
             // Load workload
             let wl = WorkloadFile::load(&workload)?;
             let adapter_name = store.to_lowercase();
-            fs::create_dir_all(&output)?;
+            let workflow_name = workflow.to_lowercase();
             let wl_stem = workload.file_stem().unwrap_or_default().to_string_lossy();
-            let run_dir = output.join(format!("{}-{}", adapter_name, wl_stem));
+
+            // Create workload subdirectory, then adapter run directory
+            let workload_dir = output.join(wl_stem.as_ref());
+            fs::create_dir_all(&workload_dir)?;
+            let run_dir = workload_dir.join(format!("{}_w{}", adapter_name, wl.writers));
             fs::create_dir_all(&run_dir)?;
 
             let default_uri = match adapter_name.as_str() {
@@ -147,11 +168,22 @@ fn main() -> Result<()> {
             // Convert Box to Arc directly
             let factory_arc: Arc<dyn AdapterFactory> = factory_box.into();
 
+            // Find workflow factory
+            let workflow_factories_vec = workflow_factories();
+            let workflow_factory = workflow_factories_vec
+                .into_iter()
+                .find(|f| f.name() == workflow_name)
+                .ok_or_else(|| anyhow::anyhow!("unknown workflow: {}", workflow_name))?;
+
+            // Create workflow strategy instance
+            let workflow_strategy = workflow_factory.create(&wl, seed)?;
+
             let rt = Runtime::new()?;
             let adapter_name_for_run = adapter_name.clone();
             let result = rt.block_on(async move {
                 run_workload(
                     factory_arc,
+                    workflow_strategy,
                     wl,
                     RunOptions {
                         adapter_name: adapter_name_for_run,

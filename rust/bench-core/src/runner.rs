@@ -1,13 +1,11 @@
-use crate::adapter::{AdapterFactory, ConnectionParams, ContainerManager, EventData, EventStoreAdapter};
+use crate::adapter::{AdapterFactory, ConnectionParams, ContainerManager, EventStoreAdapter};
 use crate::{container_stats, metrics::ContainerMetrics};
-use crate::metrics::{now_ms, LatencyRecorder, RawSample, RunMetrics, Summary};
+use crate::metrics::{RunMetrics, Summary};
 use crate::workload::Workload;
+use crate::workflow_strategy::WorkflowStrategy;
 use anyhow::Result;
-use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
-use tokio::task::JoinSet;
 
 #[derive(Debug, Clone)]
 pub struct RunOptions {
@@ -18,6 +16,7 @@ pub struct RunOptions {
 
 pub async fn run_workload(
     factory: Arc<dyn AdapterFactory>,
+    workflow: Box<dyn WorkflowStrategy>,
     wl: Workload,
     opts: RunOptions,
 ) -> Result<RunMetrics> {
@@ -69,9 +68,6 @@ pub async fn run_workload(
     let measurement_end = measurement_start + Duration::from_secs(wl.duration_seconds);
     let end_at = start_at + total_run_duration;
 
-    let samples = Arc::new(Mutex::new(Vec::<RawSample>::with_capacity(100_000)));
-    let mut set = JoinSet::new();
-
     // Start a background task to periodically collect container stats during the workload
     // Use spawn_blocking to avoid blocking the async runtime with docker CLI calls
     let container_id = container_manager.as_ref().and_then(|cm| cm.container_id());
@@ -94,59 +90,10 @@ pub async fn run_workload(
         (cpu_samples, mem_samples)
     });
 
-    // Start one task per writer - each uses its own adapter instance
-    for (i, adapter) in writer_adapters.into_iter().enumerate() {
-        let samples = samples.clone();
-        let wl = wl.clone();
-        let seed = opts.seed + (i as u64);
-
-        set.spawn(async move {
-            let mut rng = StdRng::seed_from_u64(seed);
-            let use_heavy_tail = wl.streams.distribution.to_lowercase() == "zipf";
-            let hot_set = 100_u64.min(wl.streams.unique_streams.max(1));
-            let mut rec = LatencyRecorder::new();
-            let size = wl.event_size_bytes;
-            while Instant::now() < end_at {
-                let stream_idx = if use_heavy_tail && rng.gen_bool(0.2) {
-                    // 20% of the time, pick from a small hot set starting at 0
-                    rng.gen_range(0..hot_set)
-                } else {
-                    rng.gen_range(0..wl.streams.unique_streams)
-                };
-                let evt = EventData {
-                    stream: format!("stream-{}", stream_idx),
-                    event_type: "test".to_string(),
-                    payload: vec![0u8; size],
-                    tags: vec![],
-                };
-                let t0 = Instant::now();
-                let ok = adapter.append(evt).await.is_ok();
-                let dt = t0.elapsed();
-                let now = Instant::now();
-
-                // Only record samples during the measurement window (after warmup, before cooldown)
-                if now >= measurement_start && now <= measurement_end {
-                    rec.record(dt);
-                    let mut s = samples.lock().await;
-                    s.push(RawSample {
-                        t_ms: now_ms(),
-                        op: "append".to_string(),
-                        latency_us: dt.as_micros() as u64,
-                        ok,
-                    });
-                }
-            }
-            rec
-        });
-    }
-
-    let mut overall = LatencyRecorder::new();
-    let mut events_written: u64 = 0;
-    while let Some(res) = set.join_next().await {
-        let rec = res.expect("join");
-        overall.hist.add(&rec.hist).unwrap();
-        events_written += rec.hist.len() as u64;
-    }
+    // Delegate workload execution to the workflow strategy
+    let (overall, events_written, samples_vec) = workflow
+        .execute(writer_adapters, measurement_start, measurement_end, end_at)
+        .await?;
 
     // Wait for stats collection to finish
     let (cpu_samples, mem_samples) = stats_handle.await.unwrap_or_default();
@@ -200,7 +147,6 @@ pub async fn run_workload(
         container: container_metrics,
     };
 
-    let samples_vec = samples.lock().await.clone();
     let metrics = RunMetrics {
         summary,
         samples: samples_vec,

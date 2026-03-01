@@ -1,10 +1,10 @@
 name: concurrent_writers
-duration_seconds: 60
+duration_seconds: 6
 writers: 4
 event_size_bytes: 256
 streams:
 #  distribution: zipf
-  distribution: flat
+  distribution: uniform
   unique_streams: 10000
 # optional knobs for later
 # conflict_rate: 0.0

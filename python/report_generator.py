@@ -31,26 +31,33 @@ def load_runs(raw_dir: Path):
     Samples are already filtered to the measurement window by the benchmark runner
     (warmup/cooldown excluded). We load all samples and let individual plot functions
     handle edge case filtering as needed.
+
+    Directory structure: raw_dir/{workload}/{adapter}_w{N}/
     """
     runs = []
-    for run_path in sorted(raw_dir.iterdir()):
-        if not run_path.is_dir():
+    # Iterate through workload directories
+    for workload_dir in sorted(raw_dir.iterdir()):
+        if not workload_dir.is_dir():
             continue
-        summary_file = run_path / "summary.json"
-        samples_file = run_path / "samples.jsonl"
-        if summary_file.exists() and samples_file.exists():
-            with open(summary_file) as f:
-                summary = json.load(f)
-            samples = []
-            with open(samples_file) as f:
-                for line in f:
-                    samples.append(json.loads(line))
+        # Iterate through run directories within each workload
+        for run_path in sorted(workload_dir.iterdir()):
+            if not run_path.is_dir():
+                continue
+            summary_file = run_path / "summary.json"
+            samples_file = run_path / "samples.jsonl"
+            if summary_file.exists() and samples_file.exists():
+                with open(summary_file) as f:
+                    summary = json.load(f)
+                samples = []
+                with open(samples_file) as f:
+                    for line in f:
+                        samples.append(json.loads(line))
 
-            runs.append({
-                "path": run_path,
-                "summary": summary,
-                "samples": samples,
-            })
+                runs.append({
+                    "path": run_path,
+                    "summary": summary,
+                    "samples": samples,
+                })
     return runs
 
 
@@ -500,7 +507,7 @@ def generate_consolidated_html(out_base: Path, runs, writer_groups):
         adapter = s["adapter"]
         workload = Path(s["workload"]).stem
         writers = s.get("writers", "?")
-        report_link = f"report-{adapter}-{workload}/index.html"
+        report_link = f"{workload}/report-{adapter}_w{writers}/index.html"
 
         # Get container metrics
         container = s.get("container", {})
@@ -633,8 +640,12 @@ def main():
         run["_samples_df"] = samples_df
         adapter = run["summary"]["adapter"]
         workload = Path(run["summary"]["workload"]).stem
+        writers = run["summary"].get("writers", 1)
 
-        report_dir = out_base / f"report-{adapter}-{workload}"
+        # Create workload subdirectory, then report directory
+        workload_dir = out_base / workload
+        workload_dir.mkdir(parents=True, exist_ok=True)
+        report_dir = workload_dir / f"report-{adapter}_w{writers}"
         report_dir.mkdir(parents=True, exist_ok=True)
 
         plot_latency_cdf(samples_df, report_dir / "latency_cdf.png")
