@@ -16,9 +16,7 @@ The benchmark is built with:
 
 # Running Benchmarks
 
-At the moment there is only one workload: concurrent writers.
-
-Run the `sweep_writers.sh` script to execute the benchmark.
+Run the `run_and_report.sh` script to execute the benchmark. You may need to install Rust and Python.
 
 ```bash
 # Setup Python virtual environment
