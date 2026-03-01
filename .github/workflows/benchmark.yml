@@ -33,7 +33,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Run benchmark sweep
-        run: ./scripts/sweep_writers.sh
+        run: ./scripts/run_and_report.sh
 
       - name: Generate job summary
         if: always()

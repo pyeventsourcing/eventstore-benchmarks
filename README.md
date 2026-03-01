@@ -26,7 +26,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r python/requirements.txt
 
 # Run the benchmark...
-./scripts/sweep_writers.sh
+./scripts/run_and_report.sh
 ```
 
 Then open `results/published/index.html` in your browser to view the results.
