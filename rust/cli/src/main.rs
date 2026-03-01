@@ -143,7 +143,7 @@ fn main() -> Result<()> {
             let workflow_name = workflow.to_lowercase();
             let wl_stem = workload.file_stem().unwrap_or_default().to_string_lossy();
 
-            // Create workload subdirectory, then adapter run directory
+            // Create nested structure: workload/adapter_run
             let workload_dir = output.join(wl_stem.as_ref());
             fs::create_dir_all(&workload_dir)?;
 

@@ -763,7 +763,7 @@ def main():
         writers = run["summary"].get("writers", 0)
         readers = run["summary"].get("readers", 0)
 
-        # Create workload subdirectory, then report directory with correct naming
+        # Create nested structure: workload/report-adapter
         workload_dir = out_base / workload
         workload_dir.mkdir(parents=True, exist_ok=True)
 
