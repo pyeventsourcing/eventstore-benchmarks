@@ -4,7 +4,7 @@ readers: 4
 event_size_bytes: 256
 streams:
   distribution: uniform
-  unique_streams: 10000
+  unique_streams: 1000
 setup:
-  events_to_prepopulate: 100000
-  prepopulate_streams: 10000
+  events_to_prepopulate: 10000
+  prepopulate_streams: 1000
