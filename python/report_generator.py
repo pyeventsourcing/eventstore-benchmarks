@@ -49,9 +49,17 @@ def load_runs(raw_dir: Path):
                 continue
             summary_file = run_path / "summary.json"
             samples_file = run_path / "samples.jsonl"
+            meta_file = run_path / "run.meta.json"
+
             if summary_file.exists() and samples_file.exists():
                 with open(summary_file) as f:
                     summary = json.load(f)
+                
+                meta = {}
+                if meta_file.exists():
+                    with open(meta_file) as f:
+                        meta = json.load(f)
+
                 samples = []
                 with open(samples_file) as f:
                     for line in f:
@@ -60,6 +68,7 @@ def load_runs(raw_dir: Path):
                 runs.append({
                     "path": run_path,
                     "summary": summary,
+                    "meta": meta,
                     "samples": samples,
                 })
     return runs
@@ -543,13 +552,11 @@ def generate_workload_html(out_base: Path, workload_name: str, runs, writer_grou
     for run in runs:
         s = run["summary"]
         adapter = s["adapter"]
-        workload = Path(s["workload"]).stem
         writers = s.get("writers", 0)
         readers = s.get("readers", 0)
 
         # Determine link format based on workload type
-        workload_base = extract_workload_name_from_dir(workload)
-        report_link = f"../{workload_base}/report-{adapter}-r{readers:03d}-w{writers:03d}/index.html"
+        report_link = f"../{workload_name}/report-{adapter}-r{readers:03d}-w{writers:03d}/index.html"
         if readers > 0 and writers == 0:
             worker_display = readers
         elif writers > 0 and readers == 0:
@@ -583,7 +590,7 @@ def generate_workload_html(out_base: Path, workload_name: str, runs, writer_grou
         summary_rows += f"""
       <tr>
         <td><a href='{report_link}'>{adapter}</a></td>
-        <td>{workload}</td>
+        <td>{workload_name}</td>
         <td>{worker_display}</td>
         <td>{s['duration_s']:.1f}s</td>
         <td>{s['throughput_eps']:.0f}</td>
@@ -768,20 +775,6 @@ def generate_top_level_index(out_base: Path, workload_summaries, env_info=None):
         f.write(html)
 
 
-def extract_workload_name_from_dir(workload_name: str) -> str:
-    """Extract workload type name from workload run directory name (e.g., 'concurrent_writers_w4' -> 'concurrent_writers', 'concurrent_readers_r8' -> 'concurrent_readers')."""
-    # Look for the last _r or _w followed by 3 digits (the standard run dir format)
-    # The run dir name is usually formatted as {store_name}-r{readers:03}-w{writers:03}
-    # But this function seems to be used on the workload part of the directory structure.
-    # In the current version, the workload names are already clean (concurrent_readers, concurrent_writers).
-    
-    # If it ends with _r\d+ or _w\d+, we strip it.
-    import re
-    # Match patterns like _r001 or _w004 at the end of the string
-    match = re.search(r'_[rw]\d+$', workload_name)
-    if match:
-        return workload_name[:match.start()]
-    return workload_name
 
 
 def main():
@@ -814,13 +807,16 @@ def main():
         samples_df = pd.DataFrame(run["samples"])
         run["_samples_df"] = samples_df
         adapter = run["summary"]["adapter"]
-        workload = Path(run["summary"]["workload"]).stem
-        workflow = extract_workload_name_from_dir(workload)
+        # Use workload_type from meta if available, otherwise fallback to summary workload field
+        workload_type = run.get("meta", {}).get("workload_type")
+        if not workload_type:
+             workload_type = Path(run["summary"]["workload"]).stem
+
         writers = run["summary"].get("writers", 0)
         readers = run["summary"].get("readers", 0)
 
-        # Create nested structure: workflow/report-adapter
-        workload_dir = out_base / workflow
+        # Create nested structure: workload_type/report-adapter
+        workload_dir = out_base / workload_type
         workload_dir.mkdir(parents=True, exist_ok=True)
 
         # Format directory name based on workload type, zero-padded for sorting
@@ -836,9 +832,10 @@ def main():
     # Group runs by workload
     workload_groups = defaultdict(list)
     for run in runs:
-        workload = Path(run["summary"]["workload"]).stem
-        workload_base = extract_workload_name_from_dir(workload)
-        workload_groups[workload_base].append(run)
+        workload_type = run.get("meta", {}).get("workload_type")
+        if not workload_type:
+             workload_type = Path(run["summary"]["workload"]).stem
+        workload_groups[workload_type].append(run)
 
     # Generate per-workload consolidated reports
     workload_summaries = {}
