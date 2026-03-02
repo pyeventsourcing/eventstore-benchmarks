@@ -770,10 +770,17 @@ def generate_top_level_index(out_base: Path, workload_summaries, env_info=None):
 
 def extract_workload_name_from_dir(workload_name: str) -> str:
     """Extract workload type name from workload run directory name (e.g., 'concurrent_writers_w4' -> 'concurrent_writers', 'concurrent_readers_r8' -> 'concurrent_readers')."""
-    if "_r" in workload_name:
-        return workload_name.rsplit("_r", 1)[0]
-    if "_w" in workload_name:
-        return workload_name.rsplit("_w", 1)[0]
+    # Look for the last _r or _w followed by 3 digits (the standard run dir format)
+    # The run dir name is usually formatted as {store_name}-r{readers:03}-w{writers:03}
+    # But this function seems to be used on the workload part of the directory structure.
+    # In the current version, the workload names are already clean (concurrent_readers, concurrent_writers).
+    
+    # If it ends with _r\d+ or _w\d+, we strip it.
+    import re
+    # Match patterns like _r001 or _w004 at the end of the string
+    match = re.search(r'_[rw]\d+$', workload_name)
+    if match:
+        return workload_name[:match.start()]
     return workload_name
 
 
