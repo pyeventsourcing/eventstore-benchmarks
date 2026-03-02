@@ -18,6 +18,7 @@ ADAPTER_COLORS = {
     'kurrentdb': '#1f77b4',    # Blue
     'axonserver': '#2ca02c',   # Green
     'eventsourcingdb': '#ff7f0e',  # Orange
+    'dummy': '#888888',        # Grey
 }
 
 def get_adapter_color(adapter_name):
@@ -36,6 +37,9 @@ def load_runs(raw_dir: Path):
     """
     runs = []
     # Iterate through workload directories
+    if not raw_dir.exists():
+        return []
+    
     for workload_dir in sorted(raw_dir.iterdir()):
         if not workload_dir.is_dir():
             continue
@@ -296,8 +300,8 @@ def plot_throughput_scaling(runs, out_path: Path):
         adapter_data[adapter].append((worker_count, throughput))
 
     # Determine label based on the workload type
-    first_run = runs[0]["summary"] if runs else {}
-    is_readers = first_run.get("readers", 0) > 0 and first_run.get("writers", 0) == 0
+    first_run_summary = runs[0]["summary"] if runs else {}
+    is_readers = first_run_summary.get("readers", 0) > 0 and first_run_summary.get("writers", 0) == 0
     xlabel = "Readers" if is_readers else "Writers"
     title = f"Throughput Scaling by {xlabel[:-1]} Count"
 
@@ -340,8 +344,8 @@ def plot_p99_scaling(runs, out_path: Path):
         adapter_data[adapter].append((worker_count, p99))
 
     # Determine label based on workload type
-    first_run = runs[0]["summary"] if runs else {}
-    is_readers = first_run.get("readers", 0) > 0 and first_run.get("writers", 0) == 0
+    first_run_summary_p99 = runs[0]["summary"] if runs else {}
+    is_readers = first_run_summary_p99.get("readers", 0) > 0 and first_run_summary_p99.get("writers", 0) == 0
     xlabel = "Readers" if is_readers else "Writers"
     title = f"p99 Latency Scaling by {xlabel[:-1]} Count"
 
@@ -532,7 +536,7 @@ def generate_html(report_dir: Path, run):
         f.write(html)
 
 
-def generate_workflow_html(out_base: Path, workflow_name: str, runs, writer_groups):
+def generate_workload_html(out_base: Path, workflow_name: str, runs, writer_groups):
     """Generate a consolidated report for a specific workflow."""
     # Summary table
     summary_rows = ""
@@ -880,7 +884,7 @@ def main():
         plot_container_metrics(workflow_runs, workflow_dir / f"{workflow_name}_container_metrics.png")
 
         # Generate consolidated HTML for this workflow
-        generate_workflow_html(out_base, workflow_name, workflow_runs, writer_groups)
+        generate_workload_html(out_base, workflow_name, workflow_runs, writer_groups)
         print(f"Workflow report written to {workflow_dir}/index.html")
 
         # Store summary for top-level index
