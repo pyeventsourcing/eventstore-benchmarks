@@ -66,6 +66,7 @@ pub trait StoreManager: Send + Sync {
     /// Get the container ID for stats collection (if applicable)
     fn container_id(&self) -> Option<String>;
 
+
     /// Store name (adapter name)
     fn name(&self) -> &'static str;
 
@@ -78,5 +79,5 @@ pub trait StoreManagerFactory: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Create a store manager instance with given (internal) connection params or defaults
-    fn create_store_manager(&self, uri: Option<String>, options: HashMap<String, String>) -> anyhow::Result<Box<dyn StoreManager>>;
+    fn create_store_manager(&self) -> anyhow::Result<Box<dyn StoreManager>>;
 }

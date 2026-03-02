@@ -5,7 +5,6 @@ use bench_core::adapter::{
 };
 use bench_testcontainers::umadb::{UmaDb, UMADB_PORT};
 use futures::StreamExt;
-use std::collections::HashMap;
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
@@ -16,16 +15,14 @@ use uuid::Uuid;
 
 // Store manager - handles lifecycle and adapter creation
 pub struct UmaDbStoreManager {
-    uri: String,
-    options: HashMap<String, String>,
+    uri: Option<String>,
     container: Option<ContainerAsync<UmaDb>>,
 }
 
 impl UmaDbStoreManager {
-    pub fn new(uri: Option<String>, options: HashMap<String, String>) -> Self {
+    pub fn new() -> Self {
         Self {
-            uri: uri.unwrap_or_else(|| "http://localhost:50051".to_string()),
-            options,
+            uri: None,
             container: None,
         }
     }
@@ -36,12 +33,12 @@ impl StoreManager for UmaDbStoreManager {
     async fn start(&mut self) -> Result<()> {
         let container = UmaDb::default().start().await?;
         let host_port = container.get_host_port_ipv4(UMADB_PORT).await?;
-        self.uri = format!("http://localhost:{}", host_port);
+        self.uri = Some(format!("http://localhost:{}", host_port));
         self.container = Some(container);
 
         // Wait for container to be ready
         for _ in 0..60 {
-            if let Ok(client) = UmaDBClient::new(self.uri.clone()).connect_async().await {
+            if let Ok(client) = UmaDBClient::new(self.uri.clone().unwrap()).connect_async().await {
                 if client.head().await.is_ok() {
                     return Ok(());
                 }
@@ -67,7 +64,7 @@ impl StoreManager for UmaDbStoreManager {
     }
 
     fn create_adapter(&self) -> Result<Arc<dyn EventStoreAdapter>> {
-        Ok(Arc::new(UmaDbAdapter::new(&self.uri, &self.options)?))
+        Ok(Arc::new(UmaDbAdapter::new(&self.uri.clone().unwrap())?))
     }
 }
 
@@ -77,20 +74,8 @@ pub struct UmaDbAdapter {
 }
 
 impl UmaDbAdapter {
-    pub fn new(uri: &str, options: &HashMap<String, String>) -> Result<Self> {
-        let mut builder = UmaDBClient::new(uri.to_string());
-        if let Some(v) = options.get("api_key") {
-            builder = builder.api_key(v.clone());
-        }
-        if let Some(v) = options.get("ca_path") {
-            builder = builder.ca_path(v.clone());
-        }
-        if let Some(v) = options.get("batch_size") {
-            if let Ok(n) = v.parse::<u32>() {
-                builder = builder.batch_size(n);
-            }
-        }
-
+    pub fn new(uri: &str) -> Result<Self> {
+        let builder = UmaDBClient::new(uri.to_string());
         // Connect synchronously during construction
         let client = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async { builder.connect_async().await })
@@ -172,7 +157,7 @@ impl StoreManagerFactory for UmaDbFactory {
         "umadb"
     }
 
-    fn create_store_manager(&self, uri: Option<String>, options: HashMap<String, String>) -> Result<Box<dyn StoreManager>> {
-        Ok(Box::new(UmaDbStoreManager::new(uri, options)))
+    fn create_store_manager(&self) -> Result<Box<dyn StoreManager>> {
+        Ok(Box::new(UmaDbStoreManager::new()))
     }
 }

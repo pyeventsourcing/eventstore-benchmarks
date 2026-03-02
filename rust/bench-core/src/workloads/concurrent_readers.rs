@@ -1,6 +1,6 @@
 use crate::adapter::{ReadRequest, StoreManager};
 use crate::metrics::{now_ms, LatencyRecorder, RawSample};
-use crate::workflow_strategy::{Workload, WorkloadFactory};
+use crate::workload::{Workload, WorkloadFactory};
 use crate::workload::{SetupConfig, StreamsConfig};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -22,7 +22,7 @@ pub struct ConcurrentReadersConfig {
     pub setup: Option<SetupConfig>,
 }
 
-/// Workflow that performs concurrent reads from streams
+/// Workload that performs concurrent reads from streams
 pub struct ConcurrentReadersWorkload {
     config: ConcurrentReadersConfig,
     seed: u64,
@@ -36,14 +36,11 @@ impl ConcurrentReadersWorkload {
 
 #[async_trait]
 impl Workload for ConcurrentReadersWorkload {
-    async fn execute(
+    async fn prepare(
         &self,
         store: &dyn StoreManager,
-        measurement_start: Instant,
-        measurement_end: Instant,
-        end_at: Instant,
-    ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)> {
-        // Run setup phase if configured (prepopulate data for read workloads)
+    ) -> Result<()> {
+        // Prepopulate data for read workloads
         if let Some(setup_config) = &self.config.setup {
             println!(
                 "Running setup phase: prepopulating {} events...",
@@ -99,6 +96,17 @@ impl Workload for ConcurrentReadersWorkload {
             );
         }
 
+
+        Ok(())
+    }
+
+    async fn execute(
+        &self,
+        store: &dyn StoreManager,
+        measurement_start: Instant,
+        measurement_end: Instant,
+        end_at: Instant,
+    ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)> {
         // Create reader adapters
         println!("Creating {} reader clients...", self.config.readers);
         let mut reader_adapters = Vec::new();
@@ -177,7 +185,7 @@ impl Workload for ConcurrentReadersWorkload {
         let mut events_read: u64 = 0;
         while let Some(res) = set.join_next().await {
             let (rec, reader_events_read) = res.expect("join");
-            overall.hist.add(&rec.hist).unwrap();
+            overall.hist.add(&rec.hist)?;
             events_read += reader_events_read;
         }
 

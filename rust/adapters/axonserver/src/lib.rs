@@ -7,7 +7,6 @@ use bench_core::adapter::{
     EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreManager, StoreManagerFactory,
 };
 use bench_testcontainers::axonserver::{AxonServer, AXONSERVER_GRPC_PORT};
-use std::collections::HashMap;
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
@@ -15,16 +14,14 @@ use tokio::time::Duration;
 
 // Store manager - handles lifecycle and adapter creation
 pub struct AxonServerStoreManager {
-    uri: String,
-    options: HashMap<String, String>,
+    uri: Option<String>,
     container: Option<ContainerAsync<AxonServer>>,
 }
 
 impl AxonServerStoreManager {
-    pub fn new(uri: Option<String>, options: HashMap<String, String>) -> Self {
+    pub fn new() -> Self {
         Self {
-            uri: uri.unwrap_or_else(|| "http://localhost:8124".to_string()),
-            options,
+            uri: None,
             container: None,
         }
     }
@@ -35,12 +32,12 @@ impl StoreManager for AxonServerStoreManager {
     async fn start(&mut self) -> Result<()> {
         let container = AxonServer::default().start().await?;
         let host_port = container.get_host_port_ipv4(AXONSERVER_GRPC_PORT).await?;
-        self.uri = format!("http://localhost:{}", host_port);
+        self.uri = Some(format!("http://localhost:{}", host_port));
         self.container = Some(container);
 
-        // Wait for container to be ready
+        // Wait for the container to be ready
         for _ in 0..60 {
-            if let Ok(mut client) = AxonServerClient::connect(self.uri.clone()).await {
+            if let Ok(mut client) = AxonServerClient::connect(self.uri.clone().unwrap()).await {
                 if client.get_head().await.is_ok() {
                     return Ok(());
                 }
@@ -68,7 +65,7 @@ impl StoreManager for AxonServerStoreManager {
     fn create_adapter(&self) -> Result<Arc<dyn EventStoreAdapter>> {
         let adapter = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current()
-                .block_on(async { AxonServerAdapter::new(&self.uri).await })
+                .block_on(async { AxonServerAdapter::new(&self.uri.clone().unwrap()).await })
         })?;
         Ok(Arc::new(adapter))
     }
@@ -180,8 +177,8 @@ impl StoreManagerFactory for AxonServerFactory {
         "axonserver"
     }
 
-    fn create_store_manager(&self, uri: Option<String>, options: HashMap<String, String>) -> Result<Box<dyn StoreManager>> {
-        Ok(Box::new(AxonServerStoreManager::new(uri, options)))
+    fn create_store_manager(&self) -> Result<Box<dyn StoreManager>> {
+        Ok(Box::new(AxonServerStoreManager::new()))
     }
 }
 

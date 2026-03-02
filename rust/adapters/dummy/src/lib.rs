@@ -3,21 +3,14 @@ use async_trait::async_trait;
 use bench_core::adapter::{
     EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreManager, StoreManagerFactory,
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub struct DummyStoreManager {
-    uri: String,
-    options: HashMap<String, String>,
-}
+pub struct DummyStoreManager {}
 
 impl DummyStoreManager {
-    pub fn new(uri: Option<String>, options: HashMap<String, String>) -> Self {
-        Self {
-            uri: uri.unwrap_or_else(|| "dummy://".to_string()),
-            options,
-        }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -64,9 +57,7 @@ impl StoreManagerFactory for DummyFactory {
     }
     fn create_store_manager(
         &self,
-        uri: Option<String>,
-        options: HashMap<String, String>,
     ) -> Result<Box<dyn StoreManager>> {
-        Ok(Box::new(DummyStoreManager::new(uri, options)))
+        Ok(Box::new(DummyStoreManager::new()))
     }
 }

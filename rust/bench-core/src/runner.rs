@@ -1,6 +1,6 @@
 use crate::adapter::StoreManager;
 use crate::metrics::{RunMetrics, Summary};
-use crate::workflow_strategy::Workload;
+use crate::workload::Workload;
 use crate::{container_stats, metrics::ContainerMetrics};
 use anyhow::Result;
 use std::time::{Duration, Instant};
@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 pub async fn run_workload(
     mut store: Box<dyn StoreManager>,
     workload: Box<dyn Workload>,
-    duration_seconds: u64,
 ) -> Result<RunMetrics> {
     // Start store container
     println!("Starting {} container...", store.name());
@@ -23,7 +22,16 @@ pub async fn run_workload(
         startup_time_s
     );
 
+    // Prepare the workload
+    workload
+        .prepare(
+            store.as_ref(),
+        )
+        .await?;
+
     // Warmup and cooldown durations
+    let duration_seconds = workload.duration_seconds();
+
     let warmup_duration = Duration::from_secs(1);
     let cooldown_duration = Duration::from_secs(1);
     let total_run_duration =
@@ -53,7 +61,7 @@ pub async fn run_workload(
         (cpu_samples, mem_samples)
     });
 
-    // Delegate workload execution to the workload object
+    // Execute the workload
     let (overall, events_written, events_read, samples_vec) = workload
         .execute(
             store.as_ref(),

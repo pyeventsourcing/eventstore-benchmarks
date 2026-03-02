@@ -5,7 +5,6 @@ use bench_core::adapter::{
 };
 use bench_testcontainers::kurrentdb::{KurrentDb, KURRENTDB_PORT};
 use kurrentdb::{AppendToStreamOptions, Client, ClientSettings, ReadStreamOptions, StreamPosition};
-use std::collections::HashMap;
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
@@ -14,16 +13,14 @@ use uuid::Uuid;
 
 // Store manager - handles lifecycle and adapter creation
 pub struct KurrentDbStoreManager {
-    uri: String,
-    options: HashMap<String, String>,
+    uri: Option<String>,
     container: Option<ContainerAsync<KurrentDb>>,
 }
 
 impl KurrentDbStoreManager {
-    pub fn new(uri: Option<String>, options: HashMap<String, String>) -> Self {
+    pub fn new() -> Self {
         Self {
-            uri: uri.unwrap_or_else(|| "esdb://localhost:2113?tls=false".to_string()),
-            options,
+            uri: None,
             container: None,
         }
     }
@@ -34,12 +31,12 @@ impl StoreManager for KurrentDbStoreManager {
     async fn start(&mut self) -> Result<()> {
         let container = KurrentDb::default().start().await?;
         let host_port = container.get_host_port_ipv4(KURRENTDB_PORT).await?;
-        self.uri = format!("esdb://localhost:{}?tls=false", host_port);
+        self.uri = Some(format!("esdb://localhost:{}?tls=false", host_port));
         self.container = Some(container);
 
-        // Wait for container to be ready
+        // Wait for the container to be ready
         for _ in 0..60 {
-            if let Ok(settings) = self.uri.parse::<ClientSettings>() {
+            if let Ok(settings) = self.uri.clone().unwrap().parse::<ClientSettings>() {
                 if let Ok(client) = Client::new(settings) {
                     let event =
                         kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
@@ -74,7 +71,7 @@ impl StoreManager for KurrentDbStoreManager {
     }
 
     fn create_adapter(&self) -> Result<Arc<dyn EventStoreAdapter>> {
-        Ok(Arc::new(KurrentDbAdapter::new(&self.uri)?))
+        Ok(Arc::new(KurrentDbAdapter::new(&self.uri.clone().unwrap())?))
     }
 }
 
@@ -132,7 +129,7 @@ impl EventStoreAdapter for KurrentDbAdapter {
 
     async fn ping(&self) -> Result<Duration> {
         let t0 = std::time::Instant::now();
-        // Perform a test append to verify the node is leader and accepting writes
+        // Perform an append operation to verify the node is leader and accepting writes
         let event = kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
         let options = AppendToStreamOptions::default();
         self.client
@@ -149,7 +146,7 @@ impl StoreManagerFactory for KurrentDbFactory {
         "kurrentdb"
     }
 
-    fn create_store_manager(&self, uri: Option<String>, options: HashMap<String, String>) -> Result<Box<dyn StoreManager>> {
-        Ok(Box::new(KurrentDbStoreManager::new(uri, options)))
+    fn create_store_manager(&self) -> Result<Box<dyn StoreManager>> {
+        Ok(Box::new(KurrentDbStoreManager::new()))
     }
 }

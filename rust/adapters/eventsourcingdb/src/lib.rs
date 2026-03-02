@@ -19,17 +19,17 @@ use url::Url;
 
 // Store manager - handles lifecycle and adapter creation
 pub struct EventsourcingDbStoreManager {
-    uri: String,
+    uri: Option<String>,
     options: HashMap<String, String>,
     container: Option<ContainerAsync<EventsourcingDb>>,
 }
 
 impl EventsourcingDbStoreManager {
-    pub fn new(uri: Option<String>, options: HashMap<String, String>) -> Self {
+    pub fn new() -> Self {
         Self {
-            uri: uri.unwrap_or_else(|| "http://localhost:4000".to_string()),
-            options,
+            uri: None,
             container: None,
+            options: HashMap::new(),
         }
     }
 }
@@ -39,7 +39,7 @@ impl StoreManager for EventsourcingDbStoreManager {
     async fn start(&mut self) -> Result<()> {
         let container = EventsourcingDb::default().start().await?;
         let host_port = container.get_host_port_ipv4(EVENTSOURCINGDB_PORT).await?;
-        self.uri = format!("http://localhost:{}/", host_port);
+        self.uri = Some(format!("http://localhost:{}/", host_port));
         self.container = Some(container);
 
         // Use the default API token for the container
@@ -48,7 +48,7 @@ impl StoreManager for EventsourcingDbStoreManager {
 
         // Wait for container to be ready
         for _ in 0..60 {
-            let url: Url = self.uri.parse()?;
+            let url: Url = self.uri.clone().unwrap().parse()?;
             let client = Client::new(url, EVENTSOURCINGDB_API_TOKEN);
             if client.ping().await.is_ok() {
                 return Ok(());
@@ -74,7 +74,7 @@ impl StoreManager for EventsourcingDbStoreManager {
     }
 
     fn create_adapter(&self) -> Result<Arc<dyn EventStoreAdapter>> {
-        Ok(Arc::new(EventsourcingDbAdapter::new(&self.uri, &self.options)?))
+        Ok(Arc::new(EventsourcingDbAdapter::new(&self.uri.clone().unwrap(), &self.options)?))
     }
 }
 
@@ -171,7 +171,7 @@ impl StoreManagerFactory for EventsourcingDbFactory {
         "eventsourcingdb"
     }
 
-    fn create_store_manager(&self, uri: Option<String>, options: HashMap<String, String>) -> Result<Box<dyn StoreManager>> {
-        Ok(Box::new(EventsourcingDbStoreManager::new(uri, options)))
+    fn create_store_manager(&self) -> Result<Box<dyn StoreManager>> {
+        Ok(Box::new(EventsourcingDbStoreManager::new()))
     }
 }

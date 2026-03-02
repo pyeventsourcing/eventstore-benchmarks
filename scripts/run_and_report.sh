@@ -6,7 +6,9 @@ set -euo pipefail
 #READERS=(1 2 4 8 16)
 WRITERS=(1 2)
 READERS=(1 2)
-STORES=("umadb" "kurrentdb" "axonserver" "eventsourcingdb")
+#STORES=("umadb" "kurrentdb" "axonserver" "eventsourcingdb")
+#STORES=("umadb" "kurrentdb")
+STORES=("all")
 RAW_DIR="results/raw"
 PUBLISHED_DIR="results/published"
 
@@ -25,51 +27,50 @@ else
   echo "Warning: env-check/ directory not found."
 fi
 
-# TODO: Converge workload/workflow.
-# Run concurrent_writers workflow with different writer counts
-WORKFLOW="concurrent_writers"
-WORKLOAD_TEMPLATE="workloads/concurrent_writers.yaml"
+# Run concurrent_writers workload with different writer counts
+WORKLOAD_NAME="concurrent_writers"
+WORKLOAD_CONFIG_FILE_TEMPLATE="workloads/concurrent_writers.yaml"
 for w in "${WRITERS[@]}"; do
-  # Generate a per-count workload YAML on the fly
-  WORKLOAD_FILE="workloads/${WORKFLOW}_w${w}.yaml"
-  sed "s/^writers:.*/writers: ${w}/" "$WORKLOAD_TEMPLATE" \
-    | sed "s/^name:.*/name: ${WORKFLOW}_w${w}/" \
-    > "$WORKLOAD_FILE"
+  # Generate workload config file
+  WORKLOAD_CONFIG_FILE="workloads/${WORKLOAD_NAME}_w${w}.yaml"
+  sed "s/^writers:.*/writers: ${w}/" "$WORKLOAD_CONFIG_FILE_TEMPLATE" \
+    | sed "s/^name:.*/name: ${WORKLOAD_NAME}_w${w}/" \
+    > "$WORKLOAD_CONFIG_FILE"
 
   for store in "${STORES[@]}"; do
-    echo "=== Running $store with workflow $WORKFLOW and $w writers ==="
+    echo "=== Running $store with workload $WORKLOAD_NAME and $w writers ==="
     ./target/release/es-bench run \
       --store "$store" \
-      --workflow "$WORKFLOW" \
-      --workload "$WORKLOAD_FILE" \
+      --workload "$WORKLOAD_NAME" \
+      --config "$WORKLOAD_CONFIG_FILE" \
       --output "$RAW_DIR"
   done
 
   # Clean up generated workload file
-  rm -f "$WORKLOAD_FILE"
+  rm -f "$WORKLOAD_CONFIG_FILE"
 done
 
-# Run concurrent_readers workflow with different reader counts
-WORKFLOW="concurrent_readers"
-WORKLOAD_TEMPLATE="workloads/concurrent_readers.yaml"
+# Run concurrent_readers workload with different reader counts
+WORKLOAD_NAME="concurrent_readers"
+WORKLOAD_CONFIG_FILE_TEMPLATE="workloads/concurrent_readers.yaml"
 for r in "${READERS[@]}"; do
-  # Generate a per-count workload YAML on the fly
-  WORKLOAD_FILE="workloads/${WORKFLOW}_r${r}.yaml"
-  sed "s/^readers:.*/readers: ${r}/" "$WORKLOAD_TEMPLATE" \
-    | sed "s/^name:.*/name: ${WORKFLOW}_r${r}/" \
-    > "$WORKLOAD_FILE"
+  # Generate workload config file
+  WORKLOAD_CONFIG_FILE="workloads/${WORKLOAD_NAME}_r${r}.yaml"
+  sed "s/^readers:.*/readers: ${r}/" "$WORKLOAD_CONFIG_FILE_TEMPLATE" \
+    | sed "s/^name:.*/name: ${WORKLOAD_NAME}_r${r}/" \
+    > "$WORKLOAD_CONFIG_FILE"
 
   for store in "${STORES[@]}"; do
-    echo "=== Running $store with workflow $WORKFLOW and $r readers ==="
+    echo "=== Running $store with workload $WORKLOAD_NAME and $r readers ==="
     ./target/release/es-bench run \
       --store "$store" \
-      --workflow "$WORKFLOW" \
-      --workload "$WORKLOAD_FILE" \
+      --workload "$WORKLOAD_NAME" \
+      --config "$WORKLOAD_CONFIG_FILE" \
       --output "$RAW_DIR"
   done
 
   # Clean up generated workload file
-  rm -f "$WORKLOAD_FILE"
+  rm -f "$WORKLOAD_CONFIG_FILE"
 done
 
 # Generate consolidated report

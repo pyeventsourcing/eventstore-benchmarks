@@ -1,6 +1,6 @@
 use crate::adapter::{EventData, StoreManager};
 use crate::metrics::{now_ms, LatencyRecorder, RawSample};
-use crate::workflow_strategy::{Workload, WorkloadFactory};
+use crate::workload::{Workload, WorkloadFactory};
 use crate::workload::StreamsConfig;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -20,7 +20,7 @@ pub struct ConcurrentWritersConfig {
     pub streams: StreamsConfig,
 }
 
-/// Workflow that performs concurrent unconditional appends to streams
+/// Workload that performs concurrent unconditional appends to streams
 pub struct ConcurrentWritersWorkload {
     config: ConcurrentWritersConfig,
     seed: u64,
@@ -34,6 +34,7 @@ impl ConcurrentWritersWorkload {
 
 #[async_trait]
 impl Workload for ConcurrentWritersWorkload {
+
     async fn execute(
         &self,
         store: &dyn StoreManager,
