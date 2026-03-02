@@ -36,7 +36,7 @@ pub struct ContainerMetrics {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Summary {
-    pub workload: String,
+    pub workload_type: String,
     pub adapter: String,
     pub writers: usize,
     pub readers: usize,

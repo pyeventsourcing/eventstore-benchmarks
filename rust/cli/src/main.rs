@@ -18,7 +18,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Run a workload against a store
+    /// Run a workload_type against a store
     Run {
         /// Store name (e.g., umadb)
         #[arg(long, default_value = "all")]
@@ -26,10 +26,10 @@ enum Commands {
         /// Workload name (e.g., concurrent_writers)
         #[arg(long, default_value = "concurrent_writers")]
         workload: String,
-        /// Path to workload YAML
+        /// Path to workload_type YAML
         #[arg(long)]
         config: PathBuf,
-        /// Output directory base (raw results will be placed under an adapter-workload folder)
+        /// Output directory base (raw results will be placed under an adapter-workload_type folder)
         #[arg(long, default_value = "results/raw")]
         output: PathBuf,
         /// Random seed
@@ -38,7 +38,7 @@ enum Commands {
     },
     /// List available store adapters
     ListStores,
-    /// List available workload types
+    /// List available workload_type types
     ListWorkloads,
 }
 
@@ -116,11 +116,11 @@ fn main() -> Result<()> {
 fn run_workload_and_write_output(store_name: String, store_manager: Box<dyn StoreManager>, workload: String, config: &PathBuf, output: PathBuf, seed: u64) -> Result<()> {
     let workload_name = workload.to_lowercase();
     let workload_config_yaml = fs::read_to_string(&config)?;
-    // Find a workload factory and create a workload
+    // Find a workload_type factory and create a workload_type
     let workload_factory = workload_factories()
         .into_iter()
         .find(|f| f.name() == workload_name)
-        .ok_or_else(|| anyhow::anyhow!("unknown workload type: {}", workload_name))?;
+        .ok_or_else(|| anyhow::anyhow!("unknown workload_type type: {}", workload_name))?;
 
     let workload_instance = workload_factory.create(&workload_config_yaml, seed)?;
 

@@ -33,17 +33,17 @@ def load_runs(raw_dir: Path):
     (warmup/cooldown excluded). We load all samples and let individual plot functions
     handle edge case filtering as needed.
 
-    Directory structure: raw_dir/{workload}/{adapter}-r{N}-w{N}/
+    Directory structure: raw_dir/{workload_type}/{adapter}-r{N}-w{N}/
     """
     runs = []
-    # Iterate through workload directories
+    # Iterate through workload_type directories
     if not raw_dir.exists():
         return []
     
     for workload_dir in sorted(raw_dir.iterdir()):
         if not workload_dir.is_dir():
             continue
-        # Iterate through run directories within each workload
+        # Iterate through run directories within each workload_type
         for run_path in sorted(workload_dir.iterdir()):
             if not run_path.is_dir():
                 continue
@@ -308,7 +308,7 @@ def plot_throughput_scaling(runs, out_path: Path):
 
         adapter_data[adapter].append((worker_count, throughput))
 
-    # Determine label based on the workload type
+    # Determine label based on the workload_type type
     first_run_summary = runs[0]["summary"] if runs else {}
     is_readers = first_run_summary.get("readers", 0) > 0 and first_run_summary.get("writers", 0) == 0
     xlabel = "Readers" if is_readers else "Writers"
@@ -352,7 +352,7 @@ def plot_p99_scaling(runs, out_path: Path):
         p99 = s["latency"]["p99_ms"]
         adapter_data[adapter].append((worker_count, p99))
 
-    # Determine label based on workload type
+    # Determine label based on workload_type type
     first_run_summary_p99 = runs[0]["summary"] if runs else {}
     is_readers = first_run_summary_p99.get("readers", 0) > 0 and first_run_summary_p99.get("writers", 0) == 0
     xlabel = "Readers" if is_readers else "Writers"
@@ -516,7 +516,7 @@ def generate_html(report_dir: Path, run):
 <html>
 <head>
   <meta charset='utf-8'>
-  <title>Workload Report — {summary['adapter']} / {summary['workload']}</title>
+  <title>Workload Report — {summary['adapter']} / {summary['workload_type']}</title>
   <style>
     body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }}
     h1, h2 {{ margin-top: 1.2rem; }}
@@ -526,7 +526,7 @@ def generate_html(report_dir: Path, run):
 </head>
 <body>
   <h1>Benchmark Report</h1>
-  <p><b>Adapter:</b> {summary['adapter']} &nbsp; | &nbsp; <b>Workload:</b> {summary['workload']}</p>
+  <p><b>Adapter:</b> {summary['adapter']} &nbsp; | &nbsp; <b>Workload:</b> {summary['workload_type']}</p>
   <p><b>Duration:</b> {summary['duration_s']:.1f}s &nbsp; | &nbsp; <b>Throughput:</b> {summary['throughput_eps']:.0f} eps</p>
   <div class='row'>
     <div class='card'>
@@ -546,7 +546,7 @@ def generate_html(report_dir: Path, run):
 
 
 def generate_workload_html(out_base: Path, workload_name: str, runs, writer_groups):
-    """Generate a consolidated report for a specific workload."""
+    """Generate a consolidated report for a specific workload_type."""
     # Summary table
     summary_rows = ""
     for run in runs:
@@ -555,7 +555,7 @@ def generate_workload_html(out_base: Path, workload_name: str, runs, writer_grou
         writers = s.get("writers", 0)
         readers = s.get("readers", 0)
 
-        # Determine link format based on workload type
+        # Determine link format based on workload_type type
         report_link = f"../{workload_name}/report-{adapter}-r{readers:03d}-w{writers:03d}/index.html"
         if readers > 0 and writers == 0:
             worker_display = readers
@@ -603,7 +603,7 @@ def generate_workload_html(out_base: Path, workload_name: str, runs, writer_grou
       </tr>"""
 
     # Per-worker-count comparison sections
-    # Determine if this is a readers or writers workload
+    # Determine if this is a readers or writers workload_type
     first_run = runs[0]["summary"] if runs else {}
     is_readers = first_run.get("readers", 0) > 0 and first_run.get("writers", 0) == 0
     worker_label = "Readers" if is_readers else "Writers"
@@ -684,12 +684,12 @@ def generate_workload_html(out_base: Path, workload_name: str, runs, writer_grou
 
 
 def generate_top_level_index(out_base: Path, workload_summaries, env_info=None):
-    """Generate top-level index.html that links to individual workload reports."""
+    """Generate top-level index.html that links to individual workload_type reports."""
 
     env_section = ""
     if env_info:
         env_section = f"""
-    <div class='workload-section'>
+    <div class='workload_type-section'>
       <h2>Environment Information</h2>
       <div class='row'>
         <div class='card'>
@@ -717,7 +717,7 @@ def generate_top_level_index(out_base: Path, workload_summaries, env_info=None):
 
     workload_sections = ""
     for workload_name, summary in sorted(workload_summaries.items()):
-        # Include scaling plots if this workload has multiple writer counts
+        # Include scaling plots if this workload_type has multiple writer counts
         scaling_plots = ""
         if len(summary['writer_counts']) > 1:
             scaling_plots = f"""
@@ -733,9 +733,9 @@ def generate_top_level_index(out_base: Path, workload_summaries, env_info=None):
       </div>"""
 
         workload_sections += f"""
-    <div class='workload-section'>
+    <div class='workload_type-section'>
       <h2><a href='{workload_name}/index.html'>{workload_name}</a></h2>
-      <div class='workload-info'>
+      <div class='workload_type-info'>
         <p><b>Runs:</b> {summary['run_count']}</p>
         <p><b>Adapters tested:</b> {', '.join(sorted(summary['adapters']))}</p>
         <p><b>Worker counts:</b> {', '.join(map(str, sorted(summary['writer_counts'])))}</p>
@@ -752,10 +752,10 @@ def generate_top_level_index(out_base: Path, workload_summaries, env_info=None):
   <style>
     body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }}
     h1, h2, h3 {{ margin-top: 1.2rem; }}
-    .workload-section {{ border: 1px solid #ddd; border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0; background: #fafafa; }}
-    .workload-section h2 {{ margin-top: 0; }}
-    .workload-info {{ margin: 0.5rem 0 1rem 0; }}
-    .workload-info p {{ margin: 0.25rem 0; }}
+    .workload_type-section {{ border: 1px solid #ddd; border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0; background: #fafafa; }}
+    .workload_type-section h2 {{ margin-top: 0; }}
+    .workload_type-info {{ margin: 0.5rem 0 1rem 0; }}
+    .workload_type-info p {{ margin: 0.25rem 0; }}
     .row {{ display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; }}
     .card {{ border: 1px solid #eee; border-radius: 8px; padding: 1rem; background: white; }}
     .card h3 {{ margin-top: 0; font-size: 1rem; }}
@@ -807,10 +807,7 @@ def main():
         samples_df = pd.DataFrame(run["samples"])
         run["_samples_df"] = samples_df
         adapter = run["summary"]["adapter"]
-        # Use workload_type from meta if available, otherwise fallback to summary workload field
-        workload_type = run.get("meta", {}).get("workload_type")
-        if not workload_type:
-             workload_type = Path(run["summary"]["workload"]).stem
+        workload_type = run["summary"]["workload_type"]
 
         writers = run["summary"].get("writers", 0)
         readers = run["summary"].get("readers", 0)
@@ -819,7 +816,7 @@ def main():
         workload_dir = out_base / workload_type
         workload_dir.mkdir(parents=True, exist_ok=True)
 
-        # Format directory name based on workload type, zero-padded for sorting
+        # Format directory name based on workload_type type, zero-padded for sorting
         report_dir_name = f"report-{adapter}-r{readers:03d}-w{writers:03d}"
         report_dir = workload_dir / report_dir_name
         report_dir.mkdir(parents=True, exist_ok=True)
@@ -829,25 +826,23 @@ def main():
         generate_html(report_dir, run)
         print(f"Report written to {report_dir}/index.html")
 
-    # Group runs by workload
+    # Group runs by workload_type
     workload_groups = defaultdict(list)
     for run in runs:
-        workload_type = run.get("meta", {}).get("workload_type")
-        if not workload_type:
-             workload_type = Path(run["summary"]["workload"]).stem
+        workload_type = run["summary"]["workload_type"]
         workload_groups[workload_type].append(run)
 
-    # Generate per-workload consolidated reports
+    # Generate per-workload_type consolidated reports
     workload_summaries = {}
     for workload_name, workload_runs in workload_groups.items():
-        print(f"\nProcessing workload: {workload_name}")
+        print(f"\nProcessing workload_type: {workload_name}")
 
-        # Group runs by worker count (writers or readers) for this workload
+        # Group runs by worker count (writers or readers) for this workload_type
         writer_groups = defaultdict(list)
         adapters_set = set()
         writer_counts_set = set()
 
-        # Determine if this is a readers or writers workload
+        # Determine if this is a readers or writers workload_type
         first_run = workload_runs[0]["summary"] if workload_runs else {}
         is_readers = first_run.get("readers", 0) > 0 and first_run.get("writers", 0) == 0
         worker_label = "reader" if is_readers else "writer"
@@ -862,7 +857,7 @@ def main():
             adapters_set.add(adapter)
             writer_counts_set.add(wc)
 
-        # Generate per-worker-count comparison charts for this workload
+        # Generate per-worker-count comparison charts for this workload_type
         workload_dir = out_base / workload_name
         workload_dir.mkdir(parents=True, exist_ok=True)
 
@@ -879,15 +874,15 @@ def main():
                 workload_dir / f"{workload_name}_comparison_{worker_suffix}{wc}_throughput_data.json",
             )
 
-        # Generate scaling summary charts for this workload (if multiple writer counts)
+        # Generate scaling summary charts for this workload_type (if multiple writer counts)
         if len(writer_groups) > 1:
             plot_throughput_scaling(workload_runs, workload_dir / f"{workload_name}_scaling_throughput.png")
             plot_p99_scaling(workload_runs, workload_dir / f"{workload_name}_scaling_p99.png")
 
-        # Generate container metrics visualization for this workload
+        # Generate container metrics visualization for this workload_type
         plot_container_metrics(workload_runs, workload_dir / f"{workload_name}_container_metrics.png")
 
-        # Generate consolidated HTML for this workload
+        # Generate consolidated HTML for this workload_type
         generate_workload_html(out_base, workload_name, workload_runs, writer_groups)
         print(f"Workload report written to {workload_dir}/index.html")
 

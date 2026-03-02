@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# TODO: Move this into the workload
+# TODO: Move this into the workload_type
 #WRITERS=(1 2 4 8 16)
 #READERS=(1 2 4 8 16)
 WRITERS=(1 2)
@@ -27,11 +27,11 @@ else
   echo "Warning: env-check/ directory not found."
 fi
 
-# Run concurrent_writers workload with different writer counts
+# Run concurrent_writers workload_type with different writer counts
 WORKLOAD_NAME="concurrent_writers"
 WORKLOAD_CONFIG_FILE_TEMPLATE="workloads/concurrent_writers.yaml"
 for w in "${WRITERS[@]}"; do
-  # Generate workload config file
+  # Generate workload_type config file
   WORKLOAD_CONFIG_FILE="workloads/${WORKLOAD_NAME}_w${w}.yaml"
   sed "s/^writers:.*/writers: ${w}/" "$WORKLOAD_CONFIG_FILE_TEMPLATE" \
     | sed "s/^name:.*/name: ${WORKLOAD_NAME}_w${w}/" \
@@ -41,20 +41,20 @@ for w in "${WRITERS[@]}"; do
     echo "=== Running $store with workload $WORKLOAD_NAME and $w writers ==="
     ./target/release/es-bench run \
       --store "$store" \
-      --workload "$WORKLOAD_NAME" \
+      --workload_type "$WORKLOAD_NAME" \
       --config "$WORKLOAD_CONFIG_FILE" \
       --output "$RAW_DIR"
   done
 
-  # Clean up generated workload file
+  # Clean up generated workload_type file
   rm -f "$WORKLOAD_CONFIG_FILE"
 done
 
-# Run concurrent_readers workload with different reader counts
+# Run concurrent_readers workload_type with different reader counts
 WORKLOAD_NAME="concurrent_readers"
 WORKLOAD_CONFIG_FILE_TEMPLATE="workloads/concurrent_readers.yaml"
 for r in "${READERS[@]}"; do
-  # Generate workload config file
+  # Generate workload_type config file
   WORKLOAD_CONFIG_FILE="workloads/${WORKLOAD_NAME}_r${r}.yaml"
   sed "s/^readers:.*/readers: ${r}/" "$WORKLOAD_CONFIG_FILE_TEMPLATE" \
     | sed "s/^name:.*/name: ${WORKLOAD_NAME}_r${r}/" \
@@ -64,12 +64,12 @@ for r in "${READERS[@]}"; do
     echo "=== Running $store with workload $WORKLOAD_NAME and $r readers ==="
     ./target/release/es-bench run \
       --store "$store" \
-      --workload "$WORKLOAD_NAME" \
+      --workload_type "$WORKLOAD_NAME" \
       --config "$WORKLOAD_CONFIG_FILE" \
       --output "$RAW_DIR"
   done
 
-  # Clean up generated workload file
+  # Clean up generated workload_type file
   rm -f "$WORKLOAD_CONFIG_FILE"
 done
 

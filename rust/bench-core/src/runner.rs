@@ -22,7 +22,7 @@ pub async fn execute_run(
         startup_time_s
     );
 
-    // Prepare the workload
+    // Prepare the workload_type
     workload
         .prepare(
             store.as_ref(),
@@ -42,7 +42,7 @@ pub async fn execute_run(
     let measurement_end = measurement_start + Duration::from_secs(duration_seconds);
     let end_at = start_at + total_run_duration;
 
-    // Start a background task to periodically collect container stats during the workload
+    // Start a background task to periodically collect container stats during the workload_type
     let container_id = store.container_id();
     let stats_handle = tokio::task::spawn_blocking(move || {
         let mut cpu_samples = Vec::new();
@@ -61,7 +61,7 @@ pub async fn execute_run(
         (cpu_samples, mem_samples)
     });
 
-    // Execute the workload
+    // Execute the workload_type
     let (overall, events_written, events_read, samples_vec) = workload
         .execute(
             store.as_ref(),
@@ -109,7 +109,7 @@ pub async fn execute_run(
     let dur_s = duration_seconds as f64;
     let total_ops = events_written + events_read;
     let summary = Summary {
-        workload: workload.name(),
+        workload_type: workload.name(),
         adapter: store.name().to_string(),
         writers: workload.writers(),
         readers: workload.readers(),
