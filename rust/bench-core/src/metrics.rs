@@ -24,13 +24,13 @@ pub struct ContainerMetrics {
     pub image_size_bytes: Option<u64>,
     /// Time to start the container in seconds
     pub startup_time_s: f64,
-    /// Average CPU usage percentage during workload
+    /// Average CPU usage percentage during run
     pub avg_cpu_percent: Option<f64>,
-    /// Peak CPU usage percentage during workload
+    /// Peak CPU usage percentage during run
     pub peak_cpu_percent: Option<f64>,
-    /// Average memory usage in bytes during workload
+    /// Average memory usage in bytes during run
     pub avg_memory_bytes: Option<u64>,
-    /// Peak memory usage in bytes during workload
+    /// Peak memory usage in bytes during run
     pub peak_memory_bytes: Option<u64>,
 }
 

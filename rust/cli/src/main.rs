@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bench_core::{run_workload, StoreManager, StoreManagerFactory, WorkloadFactory};
+use bench_core::{execute_run, StoreManager, StoreManagerFactory, WorkloadFactory};
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::fs;
@@ -132,10 +132,10 @@ fn run_workload_and_write_output(store_name: String, store_manager: Box<dyn Stor
     let run_dir = workload_dir.join(run_dir_name);
     fs::create_dir_all(&run_dir)?;
 
-    // Run workload
+    // Execute run
     let rt = Runtime::new()?;
     let result = rt.block_on(async {
-        run_workload(
+        execute_run(
             store_manager,
             workload_instance,
         )
@@ -161,7 +161,7 @@ fn run_workload_and_write_output(store_name: String, store_manager: Box<dyn Stor
         &meta_path,
         json!({
                     "store": store_name,
-                    "workload": workload,
+                    "workload_type": workload_name,
                     "config": config.to_string_lossy(),
                 })
             .to_string(),

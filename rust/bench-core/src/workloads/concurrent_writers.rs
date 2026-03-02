@@ -13,7 +13,6 @@ use tokio::task::JoinSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConcurrentWritersConfig {
-    pub name: String,
     pub duration_seconds: u64,
     pub writers: usize,
     pub event_size_bytes: usize,
@@ -121,7 +120,7 @@ impl Workload for ConcurrentWritersWorkload {
     }
 
     fn name(&self) -> String {
-        self.config.name.clone()
+        "concurrent_writers".to_string()
     }
 
     fn writers(&self) -> usize {

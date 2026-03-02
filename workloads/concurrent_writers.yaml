@@ -1,4 +1,3 @@
-name: concurrent_writers
 duration_seconds: 6
 writers: 4
 event_size_bytes: 256

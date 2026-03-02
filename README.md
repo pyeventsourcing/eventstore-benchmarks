@@ -215,7 +215,6 @@ All workloads are defined declaratively in YAML.
 Example:
 
 ```yaml
-name: concurrent_writers
 duration_seconds: 60
 writers: 8
 event_size_bytes: 1024

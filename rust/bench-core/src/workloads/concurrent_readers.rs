@@ -13,7 +13,6 @@ use tokio::task::JoinSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConcurrentReadersConfig {
-    pub name: String,
     pub duration_seconds: u64,
     pub readers: usize,
     pub event_size_bytes: usize,
@@ -194,7 +193,7 @@ impl Workload for ConcurrentReadersWorkload {
     }
 
     fn name(&self) -> String {
-        self.config.name.clone()
+        "concurrent_readers".to_string()
     }
 
     fn writers(&self) -> usize {

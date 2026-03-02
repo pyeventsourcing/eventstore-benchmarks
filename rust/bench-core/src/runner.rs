@@ -5,7 +5,7 @@ use crate::{container_stats, metrics::ContainerMetrics};
 use anyhow::Result;
 use std::time::{Duration, Instant};
 
-pub async fn run_workload(
+pub async fn execute_run(
     mut store: Box<dyn StoreManager>,
     workload: Box<dyn Workload>,
 ) -> Result<RunMetrics> {

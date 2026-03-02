@@ -7,6 +7,6 @@ pub mod workload;
 
 pub use adapter::{EventStoreAdapter, StoreManager, StoreManagerFactory};
 pub use metrics::{LatencyStats, RawSample, RunMetrics, Summary};
-pub use runner::run_workload;
+pub use runner::execute_run;
 pub use workload::{Workload, WorkloadFactory};
 pub use workload::{SetupConfig, StreamsConfig};
