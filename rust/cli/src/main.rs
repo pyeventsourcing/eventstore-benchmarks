@@ -1,6 +1,7 @@
 use anyhow::Result;
 use bench_core::{execute_run, StoreManager, StoreManagerFactory, WorkloadFactory};
 use clap::{Parser, Subcommand};
+use rand::Rng;
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
@@ -32,9 +33,9 @@ enum Commands {
         /// Output directory base (raw results will be placed under an adapter-workload folder)
         #[arg(long, default_value = "results/raw")]
         output: PathBuf,
-        /// Random seed
-        #[arg(long, default_value_t = 42)]
-        seed: u64,
+        /// Random seed (default is a random value)
+        #[arg(long)]
+        seed: Option<u64>,
     },
     /// List available store adapters
     ListStores,
@@ -89,13 +90,14 @@ fn main() -> Result<()> {
             output,
             seed,
         } => {
+            let actual_seed = seed.unwrap_or_else(|| rand::thread_rng().gen());
             let store_name = store.to_lowercase();
 
             if store_name == "all" {
                 for store_manager_factory in store_manager_factories() {
                     let factory_store_name = store_manager_factory.name().to_string();
                     let store_manager = store_manager_factory.create_store_manager()?;
-                    run_workload_and_write_output(factory_store_name, store_manager, workload.clone(), &config, output.clone(), seed)?;
+                    run_workload_and_write_output(factory_store_name, store_manager, workload.clone(), &config, output.clone(), actual_seed)?;
                 }
             } else {
                 // Find a store factory and create a store manager
@@ -105,7 +107,7 @@ fn main() -> Result<()> {
                     .ok_or_else(|| anyhow::anyhow!("unknown store: {}", store_name))?;
 
                 let store_manager = store_manager_factory.create_store_manager()?;
-                run_workload_and_write_output(store_name, store_manager, workload, &config, output, seed)?;
+                run_workload_and_write_output(store_name, store_manager, workload, &config, output, actual_seed)?;
                 
             }
             Ok(())
@@ -163,6 +165,7 @@ fn run_workload_and_write_output(store_name: String, store_manager: Box<dyn Stor
                     "store": store_name,
                     "workload": workload_name,
                     "config": config.to_string_lossy(),
+                    "seed": seed,
                 })
             .to_string(),
     )?;
