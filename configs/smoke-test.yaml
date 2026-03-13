@@ -1,0 +1,20 @@
+name: "smoke-test"
+workload_type: "performance"
+
+mode: "write"
+
+duration_seconds: 5
+
+concurrency:
+  writers: 2
+
+operations:
+  write:
+    event_size_bytes: 256
+
+streams:
+  distribution: "uniform"
+  count: 100
+
+stores:
+  - "dummy"

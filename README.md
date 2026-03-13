@@ -346,6 +346,11 @@ This naming makes results self-documenting when browsing the results directory.
 
 The `configs/` directory includes a variety of example workloads:
 
+### Quick Testing
+Fast configuration for smoke tests and development:
+
+- **`smoke-test.yaml`** - 5-second test with 2 writers (quick sanity check)
+
 ### Baseline Workloads
 Standard performance benchmarks for common scenarios:
 
@@ -386,6 +391,9 @@ Simulate production patterns:
 ### Running Examples
 
 ```bash
+# Quick smoke test (5 seconds)
+./target/release/es-bench run --config configs/smoke-test.yaml
+
 # Baseline write performance
 ./target/release/es-bench run --config configs/baseline-writes-w4.yaml
 
