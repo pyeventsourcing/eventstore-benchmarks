@@ -19,6 +19,33 @@ pub struct PerformanceConfig {
     pub setup: Option<SetupConfig>,
 }
 
+impl PerformanceConfig {
+    /// Check if this config represents a sweep (has multiple values)
+    pub fn is_sweep(&self) -> bool {
+        matches!(self.concurrency.writers, ConcurrencyValue::Multiple(_))
+            || matches!(self.concurrency.readers, ConcurrencyValue::Multiple(_))
+    }
+
+    /// Expand a sweep config into multiple single-value configs
+    pub fn expand_sweep(&self) -> Vec<Self> {
+        let writers_vec = self.concurrency.writers.as_vec();
+        let readers_vec = self.concurrency.readers.as_vec();
+
+        let mut configs = Vec::new();
+        for &writers in &writers_vec {
+            for &readers in &readers_vec {
+                let mut new_config = self.clone();
+                new_config.concurrency.writers = ConcurrencyValue::Single(writers);
+                new_config.concurrency.readers = ConcurrencyValue::Single(readers);
+                // Add sweep suffix to name
+                new_config.name = format!("{}-w{}-r{}", self.name, writers, readers);
+                configs.push(new_config);
+            }
+        }
+        configs
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PerformanceMode {
@@ -28,11 +55,40 @@ pub enum PerformanceMode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ConcurrencyValue {
+    Single(usize),
+    Multiple(Vec<usize>),
+}
+
+impl ConcurrencyValue {
+    pub fn as_vec(&self) -> Vec<usize> {
+        match self {
+            ConcurrencyValue::Single(v) => vec![*v],
+            ConcurrencyValue::Multiple(v) => v.clone(),
+        }
+    }
+
+    pub fn first(&self) -> usize {
+        match self {
+            ConcurrencyValue::Single(v) => *v,
+            ConcurrencyValue::Multiple(v) => v.first().copied().unwrap_or(0),
+        }
+    }
+}
+
+impl Default for ConcurrencyValue {
+    fn default() -> Self {
+        ConcurrencyValue::Single(0)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConcurrencyConfig {
     #[serde(default)]
-    pub writers: usize,
+    pub writers: ConcurrencyValue,
     #[serde(default)]
-    pub readers: usize,
+    pub readers: ConcurrencyValue,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +137,7 @@ impl PerformanceWorkload {
         // Validate mode-specific config
         match config.mode {
             PerformanceMode::Write => {
-                if config.concurrency.writers == 0 {
+                if config.concurrency.writers.first() == 0 {
                     return Err(anyhow::anyhow!(
                         "Write mode requires writers > 0 in concurrency config"
                     ));
@@ -93,7 +149,7 @@ impl PerformanceWorkload {
                 }
             }
             PerformanceMode::Read => {
-                if config.concurrency.readers == 0 {
+                if config.concurrency.readers.first() == 0 {
                     return Err(anyhow::anyhow!(
                         "Read mode requires readers > 0 in concurrency config"
                     ));
@@ -103,7 +159,7 @@ impl PerformanceWorkload {
                 }
             }
             PerformanceMode::Mixed => {
-                if config.concurrency.writers == 0 && config.concurrency.readers == 0 {
+                if config.concurrency.writers.first() == 0 && config.concurrency.readers.first() == 0 {
                     return Err(anyhow::anyhow!(
                         "Mixed mode requires writers > 0 or readers > 0"
                     ));
@@ -124,11 +180,11 @@ impl PerformanceWorkload {
     }
 
     pub fn writers(&self) -> usize {
-        self.config.concurrency.writers
+        self.config.concurrency.writers.first()
     }
 
     pub fn readers(&self) -> usize {
-        self.config.concurrency.readers
+        self.config.concurrency.readers.first()
     }
 
     pub fn duration_seconds(&self) -> u64 {
@@ -230,7 +286,7 @@ impl PerformanceWorkload {
         measurement_end: Instant,
         end_at: Instant,
     ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)> {
-        let writers = self.config.concurrency.writers;
+        let writers = self.config.concurrency.writers.first();
         println!("Creating {} writer clients...", writers);
 
         let mut writer_adapters = Vec::new();
@@ -316,7 +372,7 @@ impl PerformanceWorkload {
         measurement_end: Instant,
         end_at: Instant,
     ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)> {
-        let readers = self.config.concurrency.readers;
+        let readers = self.config.concurrency.readers.first();
         println!("Creating {} reader clients...", readers);
 
         let mut reader_adapters = Vec::new();
@@ -410,8 +466,8 @@ impl PerformanceWorkload {
         measurement_end: Instant,
         end_at: Instant,
     ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)> {
-        let writers = self.config.concurrency.writers;
-        let readers = self.config.concurrency.readers;
+        let writers = self.config.concurrency.writers.first();
+        let readers = self.config.concurrency.readers.first();
         let total_workers = writers + readers;
 
         println!("Creating {} worker clients ({} writers, {} readers)...", total_workers, writers, readers);

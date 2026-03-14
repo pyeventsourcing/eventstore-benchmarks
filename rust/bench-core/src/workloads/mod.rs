@@ -7,4 +7,4 @@ pub mod performance;
 
 // Re-export main types
 pub use factory::{Workload, WorkloadFactory, WorkloadType};
-pub use performance::PerformanceWorkload;
+pub use performance::{PerformanceWorkload, PerformanceConfig};

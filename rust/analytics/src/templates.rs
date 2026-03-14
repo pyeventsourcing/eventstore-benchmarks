@@ -19,8 +19,15 @@ pub fn generate_index_html(index: &SessionIndex) -> Result<String> {
 <body>
   <div class="container">
     <header>
-      <h1>Event Store Benchmark Suite</h1>
-      <p class="subtitle">Performance analytics dashboard</p>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h1>Event Store Benchmark Suite</h1>
+          <p class="subtitle">Performance analytics dashboard</p>
+        </div>
+        <button id="theme-toggle" class="theme-toggle" title="Toggle dark/light mode">
+          <span class="theme-icon">🌙</span>
+        </button>
+      </div>
     </header>
 
     <div class="stats-grid">
@@ -104,6 +111,9 @@ pub fn generate_session_html(detail: &SessionDetail) -> Result<String> {
   <div class="container">
     <nav class="breadcrumb">
       <a href="../../index.html">← All Sessions</a>
+      <button id="theme-toggle" class="theme-toggle" title="Toggle dark/light mode" style="margin-left: auto;">
+        <span class="theme-icon">🌙</span>
+      </button>
     </nav>
 
     <header>
@@ -187,6 +197,40 @@ body {
   color: #1a1a1a;
   background: #f8f9fa;
   padding: 24px;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+body.dark-mode {
+  color: #e5e7eb;
+  background: #0f0f0f;
+}
+
+.theme-toggle {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 24px;
+  transition: all 0.2s;
+}
+
+.theme-toggle:hover {
+  background: #f3f4f6;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.dark-mode .theme-toggle {
+  background: #1a1a1a;
+  border-color: #333;
+}
+
+.dark-mode .theme-toggle:hover {
+  background: #2a2a2a;
 }
 
 .container {
@@ -223,6 +267,9 @@ h3 {
 
 .breadcrumb {
   margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .breadcrumb a {
@@ -443,6 +490,63 @@ h3 {
   padding: 24px;
   margin-bottom: 16px;
 }
+
+.store-charts {
+  margin-top: 24px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.chart-half {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.chart-half h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  color: #666;
+}
+
+/* Dark mode overrides */
+.dark-mode .stat-card,
+.dark-mode .session-card,
+.dark-mode .store-detail,
+.dark-mode .metadata-card,
+.dark-mode #throughput-chart,
+.dark-mode #latency-chart,
+.dark-mode .chart-half,
+.dark-mode .config-section pre {
+  background: #1a1a1a;
+  border-color: #333;
+}
+
+.dark-mode .search-input,
+.dark-mode .filter-select {
+  background: #1a1a1a;
+  border-color: #333;
+  color: #e5e7eb;
+}
+
+.dark-mode .subtitle,
+.dark-mode .stat-label,
+.dark-mode .metric-label,
+.dark-mode .session-timestamp {
+  color: #9ca3af;
+}
+
+.dark-mode .store-badge {
+  background: #333;
+  color: #e5e7eb;
+}
 "#
 }
 
@@ -498,6 +602,24 @@ function filterSessions() {
 document.getElementById('search').addEventListener('input', filterSessions);
 document.getElementById('workload-filter').addEventListener('change', filterSessions);
 document.getElementById('store-filter').addEventListener('change', filterSessions);
+
+// Theme toggle
+const themeToggle = document.getElementById('theme-toggle');
+const themeIcon = document.querySelector('.theme-icon');
+
+// Load saved theme
+const savedTheme = localStorage.getItem('theme') || 'light';
+if (savedTheme === 'dark') {
+  document.body.classList.add('dark-mode');
+  themeIcon.textContent = '☀️';
+}
+
+themeToggle.addEventListener('click', () => {
+  document.body.classList.toggle('dark-mode');
+  const isDark = document.body.classList.contains('dark-mode');
+  themeIcon.textContent = isDark ? '☀️' : '🌙';
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+});
 
 // Initial render
 renderSessions(sessions);
@@ -608,12 +730,14 @@ function renderLatencyChart() {
   container.innerHTML = svg;
 }
 
-// Render store details
+// Render store details with charts
 function renderStores() {
   const container = document.getElementById('stores-container');
 
-  container.innerHTML = sessionData.stores.map(store => `
-    <div class="store-detail">
+  sessionData.stores.forEach((store, idx) => {
+    const storeDiv = document.createElement('div');
+    storeDiv.className = 'store-detail';
+    storeDiv.innerHTML = `
       <h3>${store.name}</h3>
       <div class="metrics-grid">
         <div class="metric">
@@ -633,9 +757,134 @@ function renderStores() {
           <div class="metric-label">Events Written</div>
         </div>
       </div>
-    </div>
-  `).join('');
+      <div class="store-charts">
+        <div class="chart-row">
+          <div class="chart-half">
+            <h4>Latency Distribution (CDF)</h4>
+            <div id="store-${idx}-latency-cdf"></div>
+          </div>
+          <div class="chart-half">
+            <h4>Throughput Over Time</h4>
+            <div id="store-${idx}-throughput-ts"></div>
+          </div>
+        </div>
+        <div class="chart-row">
+          <div class="chart-half">
+            <h4>Resource Usage</h4>
+            <div id="store-${idx}-resources"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    container.appendChild(storeDiv);
+
+    // Render latency CDF chart
+    renderLatencyCdf(store, idx);
+
+    // Render throughput timeseries chart
+    renderThroughputTimeseries(store, idx);
+
+    // Render resource usage
+    renderResourceUsage(store, idx);
+  });
 }
+
+// Render latency CDF for a store
+function renderLatencyCdf(store, idx) {
+  if (!store.samples_data.latency_cdf || store.samples_data.latency_cdf.length === 0) {
+    document.getElementById(`store-${idx}-latency-cdf`).innerHTML = '<p style="color: #999;">No latency data available</p>';
+    return;
+  }
+
+  const chart = Plot.plot({
+    marginLeft: 50,
+    marginBottom: 50,
+    height: 250,
+    x: {label: "Latency (ms)", type: "log", grid: true},
+    y: {label: "Percentile (%)", domain: [0, 100], grid: true},
+    marks: [
+      Plot.line(store.samples_data.latency_cdf, {
+        x: "latency_ms",
+        y: "percentile",
+        stroke: "#3b82f6",
+        strokeWidth: 2
+      }),
+      Plot.ruleY([50, 95, 99], {stroke: "#ccc", strokeDasharray: "2,2"})
+    ]
+  });
+
+  document.getElementById(`store-${idx}-latency-cdf`).appendChild(chart);
+}
+
+// Render throughput timeseries for a store
+function renderThroughputTimeseries(store, idx) {
+  if (!store.samples_data.throughput_timeseries || store.samples_data.throughput_timeseries.length === 0) {
+    document.getElementById(`store-${idx}-throughput-ts`).innerHTML = '<p style="color: #999;">No throughput data available</p>';
+    return;
+  }
+
+  const chart = Plot.plot({
+    marginLeft: 50,
+    marginBottom: 50,
+    height: 250,
+    x: {label: "Time (s)", grid: true},
+    y: {label: "Throughput (events/sec)", grid: true},
+    marks: [
+      Plot.line(store.samples_data.throughput_timeseries, {
+        x: "time_s",
+        y: "throughput_eps",
+        stroke: "#10b981",
+        strokeWidth: 2
+      }),
+      Plot.ruleY([0])
+    ]
+  });
+
+  document.getElementById(`store-${idx}-throughput-ts`).appendChild(chart);
+}
+
+// Render resource usage for a store
+function renderResourceUsage(store, idx) {
+  const container = document.getElementById(`store-${idx}-resources`);
+
+  const resources = [
+    {label: 'Startup Time', value: store.container.startup_time_s ? `${store.container.startup_time_s.toFixed(2)}s` : 'N/A'},
+    {label: 'Image Size', value: store.container.image_size_mb ? `${store.container.image_size_mb.toFixed(0)} MB` : 'N/A'},
+    {label: 'Avg CPU', value: store.container.avg_cpu_percent ? `${store.container.avg_cpu_percent.toFixed(1)}%` : 'N/A'},
+    {label: 'Peak CPU', value: store.container.peak_cpu_percent ? `${store.container.peak_cpu_percent.toFixed(1)}%` : 'N/A'},
+    {label: 'Avg Memory', value: store.container.avg_memory_mb ? `${store.container.avg_memory_mb.toFixed(0)} MB` : 'N/A'},
+    {label: 'Peak Memory', value: store.container.peak_memory_mb ? `${store.container.peak_memory_mb.toFixed(0)} MB` : 'N/A'}
+  ];
+
+  container.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+      ${resources.map(r => `
+        <div style="padding: 8px; background: #f9fafb; border-radius: 4px;">
+          <div style="font-size: 11px; color: #666; margin-bottom: 4px;">${r.label}</div>
+          <div style="font-size: 14px; font-weight: 600;">${r.value}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// Theme toggle
+const themeToggle = document.getElementById('theme-toggle');
+const themeIcon = document.querySelector('.theme-icon');
+
+// Load saved theme
+const savedTheme = localStorage.getItem('theme') || 'light';
+if (savedTheme === 'dark') {
+  document.body.classList.add('dark-mode');
+  themeIcon.textContent = '☀️';
+}
+
+themeToggle.addEventListener('click', () => {
+  document.body.classList.toggle('dark-mode');
+  const isDark = document.body.classList.contains('dark-mode');
+  themeIcon.textContent = isDark ? '☀️' : '🌙';
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+});
 
 // Initialize
 renderThroughputChart();

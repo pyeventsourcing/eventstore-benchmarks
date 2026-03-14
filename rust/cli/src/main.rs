@@ -117,12 +117,18 @@ fn run_benchmark(config_path: &PathBuf, seed: Option<u64>) -> Result<()> {
     // Get benchmark version (git commit)
     let benchmark_version = get_git_commit_hash().unwrap_or_else(|_| "unknown".to_string());
 
-    // Create workload from config
-    let workload = WorkloadFactory::create_from_yaml(&config_yaml, actual_seed)?;
+    // Detect if this is a sweep and expand if needed
+    let is_sweep = WorkloadFactory::is_sweep(&config_yaml)?;
+    let workloads = if is_sweep {
+        WorkloadFactory::expand_sweep(&config_yaml, actual_seed)?
+    } else {
+        vec![WorkloadFactory::create_from_yaml(&config_yaml, actual_seed)?]
+    };
 
-    // Detect if this is a sweep (check if config has array values)
-    // For now, we'll run as a simple non-sweep execution
-    // TODO: Implement sweep detection and expansion
+    println!("Sweep mode: {}", if is_sweep { "enabled" } else { "disabled" });
+    if is_sweep {
+        println!("Running {} workload variants", workloads.len());
+    }
 
     // Create session directory
     let session_dir = PathBuf::from("results/raw/sessions").join(&session_id);
@@ -137,7 +143,7 @@ fn run_benchmark(config_path: &PathBuf, seed: Option<u64>) -> Result<()> {
         config_file: config_path.to_string_lossy().to_string(),
         seed: actual_seed,
         stores_run: stores_to_run.clone(),
-        is_sweep: false, // TODO: Detect sweeps
+        is_sweep,
     };
 
     let session_json = serde_json::to_string_pretty(&session_metadata)?;
@@ -150,47 +156,55 @@ fn run_benchmark(config_path: &PathBuf, seed: Option<u64>) -> Result<()> {
     // Copy config file to session directory
     fs::copy(config_path, session_dir.join("config.yaml"))?;
 
-    // Create workload directory
-    let workload_dir = session_dir.join(&workload_name);
-    fs::create_dir_all(&workload_dir)?;
+    // Run each workload variant
+    for workload in workloads {
+        let workload_name = match &workload {
+            bench_core::Workload::Performance(w) => w.name(),
+            _ => "unknown",
+        };
 
-    // Run workload for each store
-    for store_name in stores_to_run {
-        println!("\n=== Running {} on {} ===", workload_name, store_name);
+        // Create workload directory
+        let workload_dir = session_dir.join(workload_name);
+        fs::create_dir_all(&workload_dir)?;
 
-        // Find store factory
-        let store_factory = store_manager_factories()
-            .into_iter()
-            .find(|f| f.name() == store_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown store: {}", store_name))?;
+        // Run workload for each store
+        for store_name in &stores_to_run {
+            println!("\n=== Running {} on {} ===", workload_name, store_name);
 
-        // Create store manager
-        let store_manager = store_factory.create_store_manager()?;
+            // Find store factory
+            let store_factory = store_manager_factories()
+                .into_iter()
+                .find(|f| f.name() == store_name)
+                .ok_or_else(|| anyhow::anyhow!("Unknown store: {}", store_name))?;
 
-        // Create store directory
-        let store_dir = workload_dir.join(&store_name);
-        fs::create_dir_all(&store_dir)?;
+            // Create store manager
+            let store_manager = store_factory.create_store_manager()?;
 
-        // Execute the run
-        let rt = Runtime::new()?;
-        let result = rt.block_on(async { execute_run(store_manager, &workload).await })?;
+            // Create store directory
+            let store_dir = workload_dir.join(store_name);
+            fs::create_dir_all(&store_dir)?;
 
-        // Write summary
-        let summary_json = serde_json::to_string_pretty(&result.summary)?;
-        fs::write(store_dir.join("summary.json"), summary_json)?;
+            // Execute the run
+            let rt = Runtime::new()?;
+            let result = rt.block_on(async { execute_run(store_manager, &workload).await })?;
 
-        // Write samples
-        let mut samples_lines = String::new();
-        for sample in result.samples {
-            samples_lines.push_str(&serde_json::to_string(&sample)?);
-            samples_lines.push('\n');
+            // Write summary
+            let summary_json = serde_json::to_string_pretty(&result.summary)?;
+            fs::write(store_dir.join("summary.json"), summary_json)?;
+
+            // Write samples
+            let mut samples_lines = String::new();
+            for sample in result.samples {
+                samples_lines.push_str(&serde_json::to_string(&sample)?);
+                samples_lines.push('\n');
+            }
+            fs::write(store_dir.join("samples.jsonl"), samples_lines)?;
+
+            println!(
+                "✓ {} completed: {:.2} events/sec",
+                store_name, result.summary.throughput_eps
+            );
         }
-        fs::write(store_dir.join("samples.jsonl"), samples_lines)?;
-
-        println!(
-            "✓ {} completed: {:.2} events/sec",
-            store_name, result.summary.throughput_eps
-        );
     }
 
     println!("\n✓ Session complete: {}", session_dir.display());

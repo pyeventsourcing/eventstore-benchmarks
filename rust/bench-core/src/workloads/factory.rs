@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde_yaml::Value;
 
-use super::performance::PerformanceWorkload;
+use super::performance::{PerformanceWorkload, PerformanceConfig};
 use super::durability::DurabilityWorkload;
 use super::consistency::ConsistencyWorkload;
 use super::operational::OperationalWorkload;
@@ -88,5 +88,48 @@ impl WorkloadFactory {
                 }
             }
         }
+    }
+
+    /// Detect if config represents a sweep (only supports performance workloads)
+    pub fn is_sweep(yaml_config: &str) -> Result<bool> {
+        let value: Value = serde_yaml::from_str(yaml_config)?;
+
+        let workload_type = value
+            .get("workload_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'workload_type' field in config"))?;
+
+        if workload_type != "performance" {
+            return Ok(false);
+        }
+
+        let config: PerformanceConfig = serde_yaml::from_str(yaml_config)?;
+        Ok(config.is_sweep())
+    }
+
+    /// Expand a sweep config into multiple workloads (only supports performance workloads)
+    pub fn expand_sweep(yaml_config: &str, seed: u64) -> Result<Vec<Workload>> {
+        let value: Value = serde_yaml::from_str(yaml_config)?;
+
+        let workload_type = value
+            .get("workload_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'workload_type' field in config"))?;
+
+        if workload_type != "performance" {
+            return Err(anyhow::anyhow!("Sweep expansion only supported for performance workloads"));
+        }
+
+        let config: PerformanceConfig = serde_yaml::from_str(yaml_config)?;
+        let expanded_configs = config.expand_sweep();
+
+        let mut workloads = Vec::new();
+        for expanded_config in expanded_configs {
+            let yaml = serde_yaml::to_string(&expanded_config)?;
+            let workload = PerformanceWorkload::from_yaml(&yaml, seed)?;
+            workloads.push(Workload::Performance(workload));
+        }
+
+        Ok(workloads)
     }
 }
