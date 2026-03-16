@@ -1,9 +1,12 @@
+use std::hint::spin_loop;
 use anyhow::Result;
 use async_trait::async_trait;
 use bench_core::adapter::{
     EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreManager, StoreManagerFactory,
 };
 use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 pub struct DummyStoreManager {}
 
@@ -37,11 +40,11 @@ pub struct DummyAdapter;
 #[async_trait]
 impl EventStoreAdapter for DummyAdapter {
     async fn append(&self, _evt: EventData) -> Result<()> {
-        // tokio::time::sleep(Duration::from_millis(0)).await;
+        precise_delay(Duration::from_millis(500));
         Ok(())
     }
     async fn read(&self, _req: ReadRequest) -> Result<Vec<ReadEvent>> {
-        // tokio::time::sleep(Duration::from_millis(0)).await;
+        precise_delay(Duration::from_millis(500));
         Ok(vec![])
     }
 }
@@ -56,5 +59,20 @@ impl StoreManagerFactory for DummyFactory {
         &self,
     ) -> Result<Box<dyn StoreManager>> {
         Ok(Box::new(DummyStoreManager::new()))
+    }
+}
+
+pub fn precise_delay(delay: Duration) {
+    let start = Instant::now();
+    let target = start + delay;
+
+    let spin_threshold = Duration::from_micros(50);
+
+    if delay > spin_threshold {
+        thread::sleep(delay - spin_threshold);
+    }
+
+    while Instant::now() < target {
+        spin_loop();
     }
 }

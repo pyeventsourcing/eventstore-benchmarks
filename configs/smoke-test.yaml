@@ -6,7 +6,7 @@ mode: "write"
 duration_seconds: 5
 
 concurrency:
-  writers: 2
+  writers: [1, 2, 4]
 
 operations:
   write:

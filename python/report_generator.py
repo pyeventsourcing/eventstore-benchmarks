@@ -109,11 +109,11 @@ def plot_latency_cdf(samples: pd.DataFrame, out_path: Path):
     plt.close()
 
 
-def compute_throughput_timeseries(samples: pd.DataFrame, bin_size_ms: int = 50):
-    """Compute throughput time series from samples.
+def compute_throughput_timeseries(samples: pd.DataFrame, bin_size_ms: int = 500):
+    """Compute throughput time series from response timestamps.
 
-    Buckets are aligned so they start at the first sample timestamp and don't
-    extend beyond the last sample. This ensures all buckets are complete.
+    Uses fixed-size time bins to compute throughput, which handles both
+    single-threaded and concurrent workloads correctly.
 
     Returns:
         dict with 'time_s', 'throughput_eps', and 'throughput_eps_smooth' arrays
@@ -126,10 +126,12 @@ def compute_throughput_timeseries(samples: pd.DataFrame, bin_size_ms: int = 50):
     # Filter only successful operations
     df = df[df["ok"] == True].copy()
 
-    if len(df) == 0:
+    if len(df) < 2:
         return None
 
-    # Find actual time range from samples
+    # Sort by timestamp
+    df = df.sort_values("t_ms").reset_index(drop=True)
+
     t_min = df["t_ms"].min()
     t_max = df["t_ms"].max()
     duration_ms = t_max - t_min
@@ -137,34 +139,25 @@ def compute_throughput_timeseries(samples: pd.DataFrame, bin_size_ms: int = 50):
     if duration_ms <= 0:
         return None
 
-    # Create bins that fit exactly within the sample time range
-    # Start bins at t_min, and only create complete bins
-    num_bins = int(duration_ms / bin_size_ms)
+    # Create fixed-size bins
+    num_bins = max(1, int(np.ceil(duration_ms / bin_size_ms)))
 
-    if num_bins == 0:
-        return None
+    # Assign each response to a bin
+    bins = ((df["t_ms"] - t_min) / bin_size_ms).astype(int)
+    bins = np.clip(bins, 0, num_bins - 1)
 
-    # Assign each sample to a bin
-    df["bin"] = ((df["t_ms"] - t_min) / bin_size_ms).astype(int)
-    # Exclude any samples that fall into an incomplete final bin
-    df = df[df["bin"] < num_bins]
-
-    # Count samples per bin
-    bin_counts = df.groupby("bin").size()
-
-    # Create complete array with zeros for empty bins
-    counts = np.zeros(num_bins)
-    for bin_idx, count in bin_counts.items():
-        counts[bin_idx] = count
+    # Count responses per bin
+    bin_counts = np.bincount(bins, minlength=num_bins)
 
     # Convert to events per second
-    eps = counts * (1000.0 / bin_size_ms)
+    eps = bin_counts * (1000.0 / bin_size_ms)
 
-    # Time points at bin centers (more intuitive for plotting)
+    # Time points at bin centers
     time_s = (np.arange(num_bins) + 0.5) * bin_size_ms / 1000.0
 
     # Apply smoothing using Gaussian filter for smoother curves
-    eps_smooth = gaussian_filter1d(eps, sigma=2.0)
+    # Use wider sigma for better smoothing
+    eps_smooth = gaussian_filter1d(eps, sigma=1.5) if len(eps) > 2 else eps
 
     return {
         "time_s": time_s,
@@ -175,7 +168,7 @@ def compute_throughput_timeseries(samples: pd.DataFrame, bin_size_ms: int = 50):
 
 def plot_throughput(samples: pd.DataFrame, out_path: Path, data_path: Path = None):
     """Plot throughput over time with both raw and smoothed data."""
-    result = compute_throughput_timeseries(samples, bin_size_ms=50)
+    result = compute_throughput_timeseries(samples, bin_size_ms=500)
 
     if result is None:
         return
@@ -238,7 +231,7 @@ def plot_comparison_throughput(run_data, title, out_path: Path, data_path: Path 
     all_data = {}
 
     for label, samples_df in run_data:
-        result = compute_throughput_timeseries(samples_df, bin_size_ms=50)
+        result = compute_throughput_timeseries(samples_df, bin_size_ms=500)
 
         if result is None:
             continue
@@ -277,8 +270,8 @@ def plot_comparison_throughput(run_data, title, out_path: Path, data_path: Path 
 def plot_throughput_scaling(runs, out_path: Path):
     """Plot throughput vs worker count (writers or readers), one line per adapter.
 
-    Computes throughput from raw samples, filtering by 'ok' status and
-    excluding first and last time groups to avoid warm-up/cool-down artifacts.
+    Uses the pre-computed throughput from the summary, which is based on the
+    actual test duration (not the response time span).
     """
     # Group by adapter → list of (worker_count, throughput)
     adapter_data = defaultdict(list)
@@ -290,39 +283,11 @@ def plot_throughput_scaling(runs, out_path: Path):
         readers = s.get("readers", 0)
         worker_count = writers if writers > 0 else readers
 
-        # Compute throughput from raw samples for better accuracy
-        samples_df = pd.DataFrame(run["samples"])
+        # Use pre-computed throughput from summary
+        throughput = s.get("throughput_eps", 0)
 
-        if samples_df.empty or "ok" not in samples_df.columns:
-            continue
-
-        # Filter by ok=true
-        ok_samples = samples_df[samples_df["ok"] == True].copy()
-
-        if len(ok_samples) == 0:
-            continue
-
-        # Convert to datetime and group by finer intervals (50ms for more granularity)
-        ok_samples["timestamp"] = pd.to_datetime(ok_samples["t_ms"], unit="ms")
-        ok_samples = ok_samples.set_index("timestamp")
-
-        # Group by 50ms intervals
-        grp = ok_samples.resample("50ms").size()
-
-        # Drop first and last groups to avoid warm-up/cool-down artifacts
-        if len(grp) > 2:
-            grp = grp.iloc[1:-1]
-
-        if len(grp) == 0:
-            continue
-
-        # Convert to events/sec (50ms → 20 samples per second)
-        eps = grp * 20
-
-        # Use median throughput for a more robust estimate
-        throughput = eps.median()
-
-        adapter_data[adapter].append((worker_count, throughput))
+        if throughput > 0:
+            adapter_data[adapter].append((worker_count, throughput))
 
     # Determine label based on the workload type
     first_run_summary = runs[0]["summary"] if runs else {}
