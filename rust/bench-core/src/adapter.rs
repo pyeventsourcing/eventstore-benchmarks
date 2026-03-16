@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionParams {
@@ -51,8 +50,6 @@ pub trait EventStoreAdapter: Send + Sync {
     }
 
     async fn read(&self, req: ReadRequest) -> anyhow::Result<Vec<ReadEvent>>;
-
-    async fn ping(&self) -> anyhow::Result<Duration>;
 }
 
 #[async_trait]

@@ -127,16 +127,16 @@ impl EventStoreAdapter for KurrentDbAdapter {
         Ok(out)
     }
 
-    async fn ping(&self) -> Result<Duration> {
-        let t0 = std::time::Instant::now();
-        // Perform an append operation to verify the node is leader and accepting writes
-        let event = kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
-        let options = AppendToStreamOptions::default();
-        self.client
-            .append_to_stream("_ping", &options, event)
-            .await?;
-        Ok(t0.elapsed())
-    }
+    // async fn ping(&self) -> Result<Duration> {
+    //     let t0 = std::time::Instant::now();
+    //     // Perform an append operation to verify the node is leader and accepting writes
+    //     let event = kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
+    //     let options = AppendToStreamOptions::default();
+    //     self.client
+    //         .append_to_stream("_ping", &options, event)
+    //         .await?;
+    //     Ok(t0.elapsed())
+    // }
 }
 
 pub struct KurrentDbFactory;

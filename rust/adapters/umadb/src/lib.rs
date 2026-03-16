@@ -143,11 +143,11 @@ impl EventStoreAdapter for UmaDbAdapter {
         Ok(out)
     }
 
-    async fn ping(&self) -> Result<Duration> {
-        let t0 = std::time::Instant::now();
-        let _ = self.client.head().await?;
-        Ok(t0.elapsed())
-    }
+    // async fn ping(&self) -> Result<Duration> {
+    //     let t0 = std::time::Instant::now();
+    //     let _ = self.client.head().await?;
+    //     Ok(t0.elapsed())
+    // }
 }
 
 pub struct UmaDbFactory;

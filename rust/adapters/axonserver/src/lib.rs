@@ -162,12 +162,12 @@ impl EventStoreAdapter for AxonServerAdapter {
         Ok(out)
     }
 
-    async fn ping(&self) -> Result<Duration> {
-        let mut client = self.client.clone();
-        let t0 = std::time::Instant::now();
-        client.get_head().await?;
-        Ok(t0.elapsed())
-    }
+    // async fn ping(&self) -> Result<Duration> {
+    //     let mut client = self.client.clone();
+    //     let t0 = std::time::Instant::now();
+    //     client.get_head().await?;
+    //     Ok(t0.elapsed())
+    // }
 }
 
 pub struct AxonServerFactory;

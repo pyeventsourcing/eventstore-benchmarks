@@ -154,14 +154,14 @@ impl EventStoreAdapter for EventsourcingDbAdapter {
         Ok(out)
     }
 
-    async fn ping(&self) -> Result<Duration> {
-        let t0 = std::time::Instant::now();
-        self.client
-            .ping()
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-        Ok(t0.elapsed())
-    }
+    // async fn ping(&self) -> Result<Duration> {
+    //     let t0 = std::time::Instant::now();
+    //     self.client
+    //         .ping()
+    //         .await
+    //         .map_err(|e| anyhow::anyhow!("{}", e))?;
+    //     Ok(t0.elapsed())
+    // }
 }
 
 pub struct EventsourcingDbFactory;
