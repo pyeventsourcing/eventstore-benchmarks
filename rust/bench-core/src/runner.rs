@@ -38,7 +38,15 @@ pub async fn execute_run(
         }
     };
 
-    let dur_s = duration_seconds as f64;
+    // Calculate actual duration from throughput samples
+    let dur_s = if throughput_samples.len() >= 2 {
+        let first_t = throughput_samples.first().unwrap().t_ms;
+        let last_t = throughput_samples.last().unwrap().t_ms;
+        (last_t - first_t) as f64 / 1000.0
+    } else {
+        duration_seconds as f64
+    };
+
     let total_ops = events_written + events_read;
     let summary = Summary {
         workload: workload_name,
