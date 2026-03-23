@@ -167,13 +167,14 @@ def plot_latency_cdf(samples: pd.DataFrame, out_path: Path):
 def compute_throughput_timeseries(throughput_samples: pd.DataFrame, bin_size_ms: int = 500, sample_rate: int = 1):
     """Compute throughput time series from throughput samples.
 
-    The new format has periodic samples with (t_ms, count) where count is cumulative.
-    We calculate throughput by computing differences between consecutive samples.
+    The format has samples with (elapsed_s, count) where count is cumulative.
+    We calculate throughput by computing differences between consecutive samples
+    and applying a moving average for smoothing.
 
     Args:
-        throughput_samples: DataFrame with 't_ms' (timestamp) and 'count' (cumulative count)
-        bin_size_ms: Not used in new implementation (kept for compatibility)
-        sample_rate: Not used in new implementation (kept for compatibility)
+        throughput_samples: DataFrame with 'elapsed_s' (time from start) and 'count' (cumulative count)
+        bin_size_ms: Not used (kept for compatibility)
+        sample_rate: Not used (kept for compatibility)
 
     Returns:
         dict with 'time_s', 'throughput_eps', and 'throughput_eps_smooth' arrays
@@ -187,26 +188,27 @@ def compute_throughput_timeseries(throughput_samples: pd.DataFrame, bin_size_ms:
     if len(df) < 2:
         return None
 
-    # Sort by timestamp
-    df = df.sort_values("t_ms").reset_index(drop=True)
+    # Sort by elapsed time
+    df = df.sort_values("elapsed_s").reset_index(drop=True)
 
-    # Calculate time differences (in seconds) and count differences
-    time_diffs = df["t_ms"].diff().iloc[1:] / 1000.0  # Convert to seconds
+    # Calculate time differences and count differences
+    time_diffs = df["elapsed_s"].diff().iloc[1:]
     count_diffs = df["count"].diff().iloc[1:]
 
     # Calculate throughput (events per second) for each interval
     eps = count_diffs / time_diffs
 
     # Time points (use the end time of each interval)
-    time_s = (df["t_ms"].iloc[1:] - df["t_ms"].iloc[0]) / 1000.0
+    time_s = df["elapsed_s"].iloc[1:]
 
-    # Apply smoothing using Gaussian filter for smoother curves
-    eps_smooth = gaussian_filter1d(eps, sigma=1.5) if len(eps) > 2 else eps
+    # Apply moving average smoothing (window size 3 for 1-second samples)
+    window_size = min(3, len(eps))
+    eps_smooth = eps.rolling(window=window_size, center=True, min_periods=1).mean()
 
     return {
         "time_s": time_s.values,
         "throughput_eps": eps.values,
-        "throughput_eps_smooth": eps_smooth,
+        "throughput_eps_smooth": eps_smooth.values,
     }
 
 
@@ -228,15 +230,16 @@ def plot_throughput(throughput_samples: pd.DataFrame, out_path: Path, data_path:
             json.dump(data, f, indent=2)
 
     plt.figure(figsize=(6, 4))
-    # Plot raw data with thin line
+    # Plot raw count deltas with thin line and markers
     plt.plot(result["time_s"], result["throughput_eps"],
-             linewidth=0.5, alpha=0.4, color='#1f77b4', label='Raw')
-    # Plot smoothed data with thick line
+             linewidth=1.0, alpha=0.3, color='#1f77b4', marker='o',
+             markersize=3, label='Raw')
+    # Plot smoothed moving average with thick line
     plt.plot(result["time_s"], result["throughput_eps_smooth"],
-             linewidth=2.5, alpha=0.9, color='#1f77b4', label='Smoothed')
-    plt.xlabel("Time (s)")
-    plt.ylabel("Events/sec")
-    plt.title("Throughput over time")
+             linewidth=2.5, alpha=0.9, color='#1f77b4', label='Moving Average')
+    plt.xlabel("Elapsed Time (s)")
+    plt.ylabel("Throughput (events/sec)")
+    plt.title("Throughput over Time")
     plt.legend()
     plt.grid(True, ls=":", alpha=0.6)
     plt.tight_layout()
@@ -295,10 +298,10 @@ def plot_comparison_throughput(run_data, title, out_path: Path, data_path: Path 
             continue
 
         color = get_adapter_color(label)
-        # Plot raw data with thin line
+        # Plot raw data with very thin line
         plt.plot(result["time_s"], result["throughput_eps"],
-                linewidth=0.5, alpha=0.2, color=color)
-        # Plot smoothed data with thick line
+                linewidth=0.3, alpha=0.15, color=color)
+        # Plot smoothed moving average with thick line
         plt.plot(result["time_s"], result["throughput_eps_smooth"],
                 label=label, color=color, linewidth=2.5, alpha=0.9)
 
@@ -315,8 +318,8 @@ def plot_comparison_throughput(run_data, title, out_path: Path, data_path: Path 
         with open(data_path, 'w') as f:
             json.dump(all_data, f, indent=2)
 
-    plt.xlabel("Time (s)")
-    plt.ylabel("Events/sec")
+    plt.xlabel("Elapsed Time (s)")
+    plt.ylabel("Throughput (events/sec)")
     plt.title(title)
     plt.legend()
     plt.grid(True, ls=":", alpha=0.6)

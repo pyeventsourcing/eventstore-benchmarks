@@ -1,6 +1,6 @@
 use crate::adapter::{EventData, ReadRequest, StoreManager};
 use crate::common::{SetupConfig, StreamsConfig};
-use crate::metrics::{now_ms, LatencyRecorder, ThroughputSample};
+use crate::metrics::{LatencyRecorder, ThroughputSample};
 use anyhow::Result;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -366,23 +366,46 @@ impl PerformanceWorkload {
 
         // Spawn throughput sampling task
         let sample_counters = worker_counters.clone();
+        let duration_seconds = self.config.duration_seconds;
         let throughput_handle = tokio::spawn(async move {
-            let mut samples = Vec::new();
-            let sample_interval = Duration::from_millis(500); // Sample every 500ms
+            // Pre-allocate vector for N+1 samples (one per second boundary, plus final)
+            let mut samples = Vec::with_capacity((duration_seconds + 1) as usize);
+            let sample_start = Instant::now();
 
-            while Instant::now() < end_at {
-                tokio::time::sleep(sample_interval).await;
+            // Take initial sample at t=0
+            let initial_count: u64 = sample_counters.iter()
+                .map(|c| c.load(Ordering::Relaxed))
+                .sum();
+            samples.push(ThroughputSample {
+                elapsed_s: 0.0,
+                count: initial_count,
+            });
 
-                // Sum counts from all workers
+            // Sample at each second boundary
+            for i in 1..=duration_seconds {
+                let target_time = sample_start + Duration::from_secs(i);
+                tokio::time::sleep_until(target_time.into()).await;
+
                 let total_count: u64 = sample_counters.iter()
                     .map(|c| c.load(Ordering::Relaxed))
                     .sum();
 
                 samples.push(ThroughputSample {
-                    t_ms: now_ms(),
+                    elapsed_s: sample_start.elapsed().as_secs_f64(),
                     count: total_count,
                 });
             }
+
+            // Take final sample after workload completes
+            tokio::time::sleep_until(end_at.into()).await;
+            let final_count: u64 = sample_counters.iter()
+                .map(|c| c.load(Ordering::Relaxed))
+                .sum();
+            samples.push(ThroughputSample {
+                elapsed_s: sample_start.elapsed().as_secs_f64(),
+                count: final_count,
+            });
+
             samples
         });
 

@@ -6,10 +6,10 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// Throughput time-series sample: timestamp and cumulative operation count
+/// Throughput time-series sample: elapsed time from workload start and cumulative operation count
 #[derive(Debug, Clone, Serialize)]
 pub struct ThroughputSample {
-    pub t_ms: u128,
+    pub elapsed_s: f64,
     pub count: u64,
 }
 

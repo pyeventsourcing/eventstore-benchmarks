@@ -38,16 +38,19 @@ pub async fn execute_run(
         }
     };
 
-    // Calculate actual duration from throughput samples
-    let dur_s = if throughput_samples.len() >= 2 {
-        let first_t = throughput_samples.first().unwrap().t_ms;
-        let last_t = throughput_samples.last().unwrap().t_ms;
-        (last_t - first_t) as f64 / 1000.0
+    // Calculate actual duration and throughput from first and last samples
+    let (dur_s, throughput_eps) = if throughput_samples.len() >= 2 {
+        let first_sample = throughput_samples.first().unwrap();
+        let last_sample = throughput_samples.last().unwrap();
+        let duration = last_sample.elapsed_s - first_sample.elapsed_s;
+        let count_delta = last_sample.count - first_sample.count;
+        let throughput = (count_delta as f64) / duration.max(0.001);
+        (duration, throughput)
     } else {
-        duration_seconds as f64
+        let total_ops = events_written + events_read;
+        (duration_seconds as f64, (total_ops as f64) / (duration_seconds as f64).max(0.001))
     };
 
-    let total_ops = events_written + events_read;
     let summary = Summary {
         workload: workload_name,
         adapter: store.name().to_string(),
@@ -56,7 +59,7 @@ pub async fn execute_run(
         events_written,
         events_read,
         duration_s: dur_s,
-        throughput_eps: (total_ops as f64) / dur_s.max(0.001),
+        throughput_eps,
         latency: overall.to_stats(),
         container: ContainerMetrics {
             image_size_bytes: None,
