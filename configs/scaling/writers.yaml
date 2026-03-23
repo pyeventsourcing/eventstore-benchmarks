@@ -10,4 +10,6 @@ operations:
 streams:
   distribution: uniform
   count: 10000
-stores: [umadb, kurrentdb, dummy]
+#stores: [dummy]
+#stores: [umadb, dummy]
+stores: [umadb]

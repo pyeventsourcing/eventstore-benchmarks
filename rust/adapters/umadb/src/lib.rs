@@ -17,6 +17,7 @@ use uuid::Uuid;
 pub struct UmaDbStoreManager {
     uri: Option<String>,
     container: Option<ContainerAsync<UmaDb>>,
+    client: Option<Arc<umadb_client::AsyncUmaDBClient>>,
     local: bool,
 }
 
@@ -25,6 +26,7 @@ impl UmaDbStoreManager {
         Self {
             uri: None,
             container: None,
+            client: None,
             local: true,
         }
     }
@@ -42,10 +44,11 @@ impl StoreManager for UmaDbStoreManager {
             self.uri = Some(format!("http://localhost:{}", UMADB_PORT));
         }
 
-        // Wait for container to be ready
+        // Wait for container to be ready and create shared client
         for _ in 0..60 {
             if let Ok(client) = UmaDBClient::new(self.uri.clone().unwrap()).connect_async().await {
                 if client.head().await.is_ok() {
+                    self.client = Some(Arc::new(client));
                     return Ok(());
                 }
             }
@@ -70,27 +73,16 @@ impl StoreManager for UmaDbStoreManager {
     }
 
     fn create_adapter(&self) -> Result<Arc<dyn EventStoreAdapter>> {
-        Ok(Arc::new(UmaDbAdapter::new(&self.uri.clone().unwrap())?))
+        let client = self.client.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("UmaDB client not initialized. Did you call start()?"))?
+            .clone();
+        Ok(Arc::new(UmaDbAdapter { client }))
     }
 }
 
-// Lightweight adapter - just wraps a client
+// Lightweight adapter - just wraps a shared client
 pub struct UmaDbAdapter {
     client: Arc<umadb_client::AsyncUmaDBClient>,
-}
-
-impl UmaDbAdapter {
-    pub fn new(uri: &str) -> Result<Self> {
-        let builder = UmaDBClient::new(uri.to_string());
-        // Connect synchronously during construction
-        let client = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async { builder.connect_async().await })
-        })?;
-
-        Ok(Self {
-            client: Arc::new(client),
-        })
-    }
 }
 
 #[async_trait]
