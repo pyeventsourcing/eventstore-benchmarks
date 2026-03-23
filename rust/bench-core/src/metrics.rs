@@ -61,10 +61,6 @@ pub struct RunMetrics {
     pub latency_histogram: LatencyRecorder,
 }
 
-fn default_sample_rate() -> u64 {
-    1 // Default to no sampling (every event sampled)
-}
-
 #[derive(Clone, Debug)]
 pub struct LatencyRecorder {
     pub hist: Histogram<u64>,

@@ -49,13 +49,13 @@ def load_session_runs(session_dir: Path, load_samples: bool = True):
             continue
 
         # In the new format, each run directory has subdirectories for adapters
-        # Each adapter directory contains summary.json and samples.jsonl
+        # Each adapter directory contains summary.json and throughput.jsonl
         for adapter_path in sorted(run_path.iterdir()):
             if not adapter_path.is_dir():
                 continue
 
             summary_file = adapter_path / "summary.json"
-            samples_file = adapter_path / "samples.jsonl"
+            throughput_file = adapter_path / "throughput.jsonl"
             meta_file = adapter_path / "run.meta.json"
 
             if summary_file.exists():
@@ -67,11 +67,11 @@ def load_session_runs(session_dir: Path, load_samples: bool = True):
                     with open(meta_file) as f:
                         meta = json.load(f)
 
-                samples = []
-                if load_samples and samples_file.exists():
-                    with open(samples_file) as f:
+                throughput_samples = []
+                if load_samples and throughput_file.exists():
+                    with open(throughput_file) as f:
                         for line in f:
-                            samples.append(json.loads(line))
+                            throughput_samples.append(json.loads(line))
 
                 runs.append({
                     "session_id": session_dir.name,
@@ -79,7 +79,7 @@ def load_session_runs(session_dir: Path, load_samples: bool = True):
                     "path": adapter_path,
                     "summary": summary,
                     "meta": meta,
-                    "samples": samples,
+                    "throughput_samples": throughput_samples,
                 })
     return runs
 
@@ -179,27 +179,25 @@ def plot_latency_cdf(samples: pd.DataFrame, out_path: Path):
     plt.close()
 
 
-def compute_throughput_timeseries(samples: pd.DataFrame, bin_size_ms: int = 500, sample_rate: int = 1):
-    """Compute throughput time series from response timestamps.
+def compute_throughput_timeseries(throughput_samples: pd.DataFrame, bin_size_ms: int = 500, sample_rate: int = 1):
+    """Compute throughput time series from throughput samples.
 
-    Uses fixed-size time bins to compute throughput, which handles both
-    single-threaded and concurrent workloads correctly.
+    The new format has periodic samples with (t_ms, count) where count is cumulative.
+    We calculate throughput by computing differences between consecutive samples.
 
     Args:
-        samples: DataFrame with sample data
-        bin_size_ms: Size of time bins in milliseconds
-        sample_rate: Sampling rate (e.g., 100 means 1-in-100 sampling)
+        throughput_samples: DataFrame with 't_ms' (timestamp) and 'count' (cumulative count)
+        bin_size_ms: Not used in new implementation (kept for compatibility)
+        sample_rate: Not used in new implementation (kept for compatibility)
 
     Returns:
         dict with 'time_s', 'throughput_eps', and 'throughput_eps_smooth' arrays
         or None if no valid data
     """
-    if samples.empty or "ok" not in samples.columns:
+    if throughput_samples.empty or "count" not in throughput_samples.columns:
         return None
-    df = samples.copy()
 
-    # Filter only successful operations
-    df = df[df["ok"] == True].copy()
+    df = throughput_samples.copy()
 
     if len(df) < 2:
         return None
@@ -207,44 +205,29 @@ def compute_throughput_timeseries(samples: pd.DataFrame, bin_size_ms: int = 500,
     # Sort by timestamp
     df = df.sort_values("t_ms").reset_index(drop=True)
 
-    t_min = df["t_ms"].min()
-    t_max = df["t_ms"].max()
-    duration_ms = t_max - t_min
+    # Calculate time differences (in seconds) and count differences
+    time_diffs = df["t_ms"].diff().iloc[1:] / 1000.0  # Convert to seconds
+    count_diffs = df["count"].diff().iloc[1:]
 
-    if duration_ms <= 0:
-        return None
+    # Calculate throughput (events per second) for each interval
+    eps = count_diffs / time_diffs
 
-    # Create fixed-size bins
-    num_bins = max(1, int(np.ceil(duration_ms / bin_size_ms)))
-
-    # Assign each response to a bin
-    bins = ((df["t_ms"] - t_min) / bin_size_ms).astype(int)
-    bins = np.clip(bins, 0, num_bins - 1)
-
-    # Count responses per bin
-    bin_counts = np.bincount(bins, minlength=num_bins)
-
-    # Convert to events per second, scaling by sample rate
-    # If sampling 1-in-100, multiply by 100 to get actual throughput
-    eps = bin_counts * (1000.0 / bin_size_ms) * sample_rate
-
-    # Time points at bin centers
-    time_s = (np.arange(num_bins) + 0.5) * bin_size_ms / 1000.0
+    # Time points (use the end time of each interval)
+    time_s = (df["t_ms"].iloc[1:] - df["t_ms"].iloc[0]) / 1000.0
 
     # Apply smoothing using Gaussian filter for smoother curves
-    # Use wider sigma for better smoothing
     eps_smooth = gaussian_filter1d(eps, sigma=1.5) if len(eps) > 2 else eps
 
     return {
-        "time_s": time_s,
-        "throughput_eps": eps,
+        "time_s": time_s.values,
+        "throughput_eps": eps.values,
         "throughput_eps_smooth": eps_smooth,
     }
 
 
-def plot_throughput(samples: pd.DataFrame, out_path: Path, data_path: Path = None, sample_rate: int = 1):
+def plot_throughput(throughput_samples: pd.DataFrame, out_path: Path, data_path: Path = None, sample_rate: int = 1):
     """Plot throughput over time with both raw and smoothed data."""
-    result = compute_throughput_timeseries(samples, bin_size_ms=500, sample_rate=sample_rate)
+    result = compute_throughput_timeseries(throughput_samples, bin_size_ms=500, sample_rate=sample_rate)
 
     if result is None:
         return
@@ -1048,8 +1031,8 @@ def main():
 
         # Generate individual reports for each run in this session
         for run in runs:
-            samples_df = pd.DataFrame(run["samples"])
-            run["_samples_df"] = samples_df
+            throughput_df = pd.DataFrame(run["throughput_samples"])
+            run["_throughput_df"] = throughput_df
             adapter = run["summary"]["adapter"]
             workload_name = run["summary"]["workload"]
 
@@ -1069,12 +1052,11 @@ def main():
             report_dir = workload_dir / report_dir_name
             report_dir.mkdir(parents=True, exist_ok=True)
 
-            # Try HDR histogram first, fallback to samples
+            # Plot latency from HDR histogram
             hist_file = run["path"] / "latency.hdr"
-            if not plot_latency_cdf_from_hdr(hist_file, report_dir / "latency_cdf.png"):
-                plot_latency_cdf(samples_df, report_dir / "latency_cdf.png")
+            plot_latency_cdf_from_hdr(hist_file, report_dir / "latency_cdf.png")
 
-            plot_throughput(samples_df, report_dir / "throughput.png", report_dir / "throughput_data.json", sample_rate=sample_rate)
+            plot_throughput(throughput_df, report_dir / "throughput.png", report_dir / "throughput_data.json", sample_rate=sample_rate)
             generate_html(report_dir, run)
 
         # Generate per-workload consolidated reports for this session
@@ -1098,7 +1080,7 @@ def main():
                 wc = readers if is_readers else writers
                 adapter = run["summary"]["adapter"]
                 sample_rate = run.get("meta", {}).get("sample_rate", 1)
-                writer_groups[wc].append((adapter, run["_samples_df"], sample_rate))
+                writer_groups[wc].append((adapter, run["_throughput_df"], sample_rate))
                 adapters_set.add(adapter)
                 writer_counts_set.add(wc)
                 all_adapters.add(adapter)
@@ -1107,11 +1089,12 @@ def main():
             workload_dir.mkdir(parents=True, exist_ok=True)
 
             for wc, run_data in sorted(writer_groups.items()):
-                plot_comparison_latency_cdf(
-                    run_data,
-                    f"Latency CDF — {wc} {worker_label}(s)",
-                    workload_dir / f"{workload_name}_comparison_{worker_suffix}{wc}_latency_cdf.png",
-                )
+                # TODO: Reimplement latency comparison using HDR histograms
+                # plot_comparison_latency_cdf(
+                #     run_data,
+                #     f"Latency CDF — {wc} {worker_label}(s)",
+                #     workload_dir / f"{workload_name}_comparison_{worker_suffix}{wc}_latency_cdf.png",
+                # )
                 plot_comparison_throughput(
                     run_data,
                     f"Throughput — {wc} {worker_label}(s)",

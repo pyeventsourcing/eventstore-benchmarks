@@ -192,13 +192,13 @@ fn run_benchmark(config_path: &PathBuf, seed: Option<u64>) -> Result<()> {
             let summary_json = serde_json::to_string_pretty(&result.summary)?;
             fs::write(store_dir.join("summary.json"), summary_json)?;
 
-            // Write samples
-            let mut samples_lines = String::new();
-            for sample in result.samples {
-                samples_lines.push_str(&serde_json::to_string(&sample)?);
-                samples_lines.push('\n');
+            // Write throughput time-series samples
+            let mut throughput_lines = String::new();
+            for sample in result.throughput_samples {
+                throughput_lines.push_str(&serde_json::to_string(&sample)?);
+                throughput_lines.push('\n');
             }
-            fs::write(store_dir.join("samples.jsonl"), samples_lines)?;
+            fs::write(store_dir.join("throughput.jsonl"), throughput_lines)?;
 
             // Write metadata with sample rate
             let metadata = serde_json::json!({

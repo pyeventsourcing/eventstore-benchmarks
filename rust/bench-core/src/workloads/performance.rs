@@ -1,10 +1,12 @@
 use crate::adapter::{EventData, ReadRequest, StoreManager};
 use crate::common::{SetupConfig, StreamsConfig};
-use crate::metrics::{now_ms, LatencyRecorder, RawSample};
+use crate::metrics::{now_ms, LatencyRecorder, ThroughputSample};
 use anyhow::Result;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -262,7 +264,7 @@ impl PerformanceWorkload {
         measurement_start: Instant,
         measurement_end: Instant,
         end_at: Instant,
-    ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)> {
+    ) -> Result<(LatencyRecorder, u64, u64, Vec<ThroughputSample>)> {
         match self.config.mode {
             PerformanceMode::Write => {
                 self.execute_write_workload(store, measurement_start, measurement_end, end_at)
@@ -285,7 +287,7 @@ impl PerformanceWorkload {
         _measurement_start: Instant,
         _measurement_end: Instant,
         end_at: Instant,
-    ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)> {
+    ) -> Result<(LatencyRecorder, u64, u64, Vec<ThroughputSample>)> {
         let writers = self.config.concurrency.writers.first();
         println!("Creating {} writer clients...", writers);
 
@@ -305,11 +307,16 @@ impl PerformanceWorkload {
 
         let write_config = self.config.operations.write.as_ref().unwrap();
 
+        // Shared atomic counter for all writers
+        let total_count = Arc::new(AtomicU64::new(0));
+
+        // Spawn writer tasks
         for (_i, adapter) in writer_adapters.into_iter().enumerate() {
             let write_cfg = write_config.clone();
+            let counter = total_count.clone();
 
             set.spawn(async move {
-                let mut count = 0u64;
+                let mut local_count = 0u64;
                 let size = write_cfg.event_size_bytes;
 
                 // Pre-allocate strings outside loop
@@ -320,7 +327,6 @@ impl PerformanceWorkload {
                 // Sampling for latency measurement (1 in every N operations)
                 const SAMPLE_RATE: u64 = 100;
                 let mut rec = LatencyRecorder::new();
-                let mut task_samples = Vec::new();
 
                 // Tight loop with minimal overhead
                 while Instant::now() < end_at {
@@ -331,50 +337,54 @@ impl PerformanceWorkload {
                         tags: vec![],
                     };
 
-                    // Sample every Nth operation
-                    let should_sample = count % SAMPLE_RATE == 0;
+                    // Sample every Nth operation for latency
+                    let should_sample = local_count % SAMPLE_RATE == 0;
                     let t0 = if should_sample { Some(Instant::now()) } else { None };
 
-                    let ok = match adapter.append(evt).await {
-                        Ok(_) => {
-                            count += 1;
-                            true
-                        }
-                        Err(_) => {
-                            count += 1;
-                            false
-                        }
-                    };
+                    if adapter.append(evt).await.is_ok() {
+                        local_count += 1;
+                        counter.fetch_add(1, Ordering::Relaxed);
 
-                    // Record sample if this operation was sampled
-                    if let Some(start) = t0 {
-                        let dt = start.elapsed();
-                        rec.record(dt);
-                        let sample = RawSample {
-                            t_ms: now_ms(),
-                            op: "append".to_string(),
-                            latency_us: dt.as_micros() as u64,
-                            ok,
-                        };
-                        task_samples.push(sample);
+                        // Record latency sample
+                        if let Some(start) = t0 {
+                            rec.record(start.elapsed());
+                        }
                     }
                 }
-                (rec, count, task_samples)
+                rec
             });
         }
 
-        let mut overall = LatencyRecorder::new();
-        let mut events_written: u64 = 0;
-        let mut samples_vec = Vec::new();
+        // Spawn throughput sampling task
+        let sample_counter = total_count.clone();
+        let start_time = Instant::now();
+        let throughput_handle = tokio::spawn(async move {
+            let mut samples = Vec::new();
+            let sample_interval = Duration::from_millis(500); // Sample every 500ms
 
+            while Instant::now() < end_at {
+                tokio::time::sleep(sample_interval).await;
+                let count = sample_counter.load(Ordering::Relaxed);
+                samples.push(ThroughputSample {
+                    t_ms: now_ms(),
+                    count,
+                });
+            }
+            samples
+        });
+
+        // Collect results from writer tasks
+        let mut overall = LatencyRecorder::new();
         while let Some(res) = set.join_next().await {
-            let (rec, count, task_samples) = res.expect("join");
+            let rec = res.expect("join");
             overall.hist.add(&rec.hist).unwrap();
-            events_written += count;
-            samples_vec.extend(task_samples);
         }
 
-        Ok((overall, events_written, 0, samples_vec))
+        // Get final count and throughput samples
+        let events_written = total_count.load(Ordering::Relaxed);
+        let throughput_samples = throughput_handle.await.expect("throughput task");
+
+        Ok((overall, events_written, 0, throughput_samples))
     }
 
     async fn execute_read_workload(
@@ -383,7 +393,7 @@ impl PerformanceWorkload {
         measurement_start: Instant,
         measurement_end: Instant,
         end_at: Instant,
-    ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)> {
+    ) -> Result<(LatencyRecorder, u64, u64, Vec<ThroughputSample>)> {
         let readers = self.config.concurrency.readers.first();
         println!("Creating {} reader clients...", readers);
 
@@ -414,7 +424,6 @@ impl PerformanceWorkload {
                 let hot_set = 100_u64.min(config.streams.count.max(1));
                 let mut rec = LatencyRecorder::new();
                 let mut total_events_read = 0u64;
-                let mut task_samples = Vec::new();
 
                 while Instant::now() < end_at {
                     let stream_idx = if use_heavy_tail && rng.gen_bool(0.2) {
@@ -445,30 +454,22 @@ impl PerformanceWorkload {
 
                     if now >= measurement_start && now <= measurement_end {
                         rec.record(dt);
-                        let sample = RawSample {
-                            t_ms: now_ms(),
-                            op: "read".to_string(),
-                            latency_us: dt.as_micros() as u64,
-                            ok,
-                        };
-                        task_samples.push(sample);
                     }
                 }
-                (rec, total_events_read, task_samples)
+                (rec, total_events_read)
             });
         }
 
         let mut overall = LatencyRecorder::new();
         let mut events_read: u64 = 0;
-        let mut samples_vec = Vec::new();
         while let Some(res) = set.join_next().await {
-            let (rec, reader_events_read, task_samples) = res.expect("join");
+            let (rec, reader_events_read) = res.expect("join");
             overall.hist.add(&rec.hist)?;
             events_read += reader_events_read;
-            samples_vec.extend(task_samples);
         }
 
-        Ok((overall, 0, events_read, samples_vec))
+        // No throughput samples for read workloads yet
+        Ok((overall, 0, events_read, Vec::new()))
     }
 
     async fn execute_mixed_workload(
@@ -477,7 +478,7 @@ impl PerformanceWorkload {
         measurement_start: Instant,
         measurement_end: Instant,
         end_at: Instant,
-    ) -> Result<(LatencyRecorder, u64, u64, Vec<RawSample>)> {
+    ) -> Result<(LatencyRecorder, u64, u64, Vec<ThroughputSample>)> {
         let writers = self.config.concurrency.writers.first();
         let readers = self.config.concurrency.readers.first();
         let total_workers = writers + readers;
@@ -518,7 +519,6 @@ impl PerformanceWorkload {
                 let mut rec = LatencyRecorder::new();
                 let mut events_written = 0u64;
                 let mut events_read = 0u64;
-                let mut task_samples = Vec::new();
 
                 let write_cfg = config.operations.write.as_ref();
                 let read_cfg = config.operations.read.as_ref();
@@ -582,31 +582,22 @@ impl PerformanceWorkload {
                     let now = Instant::now();
                     if now >= measurement_start && now <= measurement_end {
                         rec.record(dt);
-                        let sample = RawSample {
-                            t_ms: now_ms(),
-                            op: op_name.to_string(),
-                            latency_us: dt.as_micros() as u64,
-                            ok,
-                        };
-                        task_samples.push(sample);
                     }
                 }
-                (rec, events_written, events_read, task_samples)
+                (rec, events_written, events_read)
             });
         }
 
         let mut overall = LatencyRecorder::new();
         let mut total_events_written: u64 = 0;
         let mut total_events_read: u64 = 0;
-        let mut samples_vec = Vec::new();
         while let Some(res) = set.join_next().await {
-            let (rec, written, read, task_samples) = res.expect("join");
+            let (rec, written, read) = res.expect("join");
             overall.hist.add(&rec.hist)?;
             total_events_written += written;
             total_events_read += read;
-            samples_vec.extend(task_samples);
         }
 
-        Ok((overall, total_events_written, total_events_read, samples_vec))
+        Ok((overall, total_events_written, total_events_read, Vec::new()))
     }
 }

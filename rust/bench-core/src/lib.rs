@@ -8,7 +8,7 @@ pub mod workloads;
 
 pub use adapter::{EventStoreAdapter, StoreManager, StoreManagerFactory};
 pub use common::{SetupConfig, StreamsConfig};
-pub use metrics::{LatencyStats, RawSample, RunMetrics, Summary};
+pub use metrics::{LatencyStats, ThroughputSample, RunMetrics, Summary};
 pub use metrics::{SessionMetadata, EnvironmentInfo, RunManifest};
 pub use metrics::{OsInfo, CpuInfo, MemoryInfo, DiskInfo, ContainerRuntimeInfo};
 pub use runner::execute_run;

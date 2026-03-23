@@ -23,7 +23,7 @@ pub async fn execute_run(
     );
 
     // Extract workload details and execute based on type
-    let (workload_name, duration_seconds, writers, readers, overall, events_written, events_read, samples_vec) = match workload {
+    let (workload_name, duration_seconds, writers, readers, overall, events_written, events_read, throughput_samples) = match workload {
         Workload::Performance(perf_workload) => {
             execute_performance_workload(store.as_ref(), perf_workload).await?
         }
@@ -62,7 +62,7 @@ pub async fn execute_run(
 
     let metrics = RunMetrics {
         summary,
-        samples: samples_vec,
+        throughput_samples,
         sample_rate: 100, // 1-in-100 sampling
         latency_histogram: overall,
     };
@@ -76,7 +76,7 @@ pub async fn execute_run(
 async fn execute_performance_workload(
     store: &dyn StoreManager,
     workload: &PerformanceWorkload,
-) -> Result<(String, u64, usize, usize, crate::metrics::LatencyRecorder, u64, u64, Vec<crate::metrics::RawSample>)> {
+) -> Result<(String, u64, usize, usize, crate::metrics::LatencyRecorder, u64, u64, Vec<crate::metrics::ThroughputSample>)> {
     // Prepare the workload
     workload.prepare(store).await?;
 
@@ -94,7 +94,7 @@ async fn execute_performance_workload(
     let end_at = start_at + total_run_duration;
 
     // Execute the workload
-    let (overall, events_written, events_read, samples_vec) = workload
+    let (overall, events_written, events_read, throughput_samples) = workload
         .execute(
             store,
             measurement_start,
@@ -111,6 +111,6 @@ async fn execute_performance_workload(
         overall,
         events_written,
         events_read,
-        samples_vec,
+        throughput_samples,
     ))
 }
