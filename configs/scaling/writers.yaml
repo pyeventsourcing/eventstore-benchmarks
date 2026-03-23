@@ -3,7 +3,7 @@ workload_type: performance
 mode: write
 duration_seconds: 20
 concurrency:
-  writers: [1,2,4]
+  writers: [1,2,4,8,16]
 operations:
   write:
     event_size_bytes: 256
@@ -11,5 +11,5 @@ streams:
   distribution: uniform
   count: 10000
 #stores: [dummy]
-#stores: [umadb, dummy]
-stores: [umadb]
+stores: [umadb, kurrentdb, axonserver, dummy]
+#stores: [umadb]

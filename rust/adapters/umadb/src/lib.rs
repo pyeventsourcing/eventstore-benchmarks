@@ -26,7 +26,7 @@ impl UmaDbStoreManager {
             uri: None,
             container: None,
             client: None,
-            local: true,
+            local: false,
         }
     }
 }

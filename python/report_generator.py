@@ -242,23 +242,34 @@ def plot_throughput(throughput_samples: pd.DataFrame, out_path: Path, data_path:
 
 
 def plot_comparison_latency_cdf(run_data, title, out_path: Path):
-    """Plot latency CDF comparing stores for a specific writer count."""
+    """Plot latency CDF comparing stores for a specific writer count.
+
+    Args:
+        run_data: List of (adapter_name, latency_file_path) tuples
+        title: Plot title
+        out_path: Output path for the plot
+    """
     plt.figure(figsize=(8, 5))
-    for label, samples_df in run_data:
-        if samples_df.empty or "ok" not in samples_df.columns:
+
+    for adapter_name, latency_file in run_data:
+        percentiles_data = load_latency_percentiles(latency_file)
+
+        if percentiles_data is None or len(percentiles_data) == 0:
             continue
-        lat_ms = samples_df.loc[samples_df["ok"], "latency_us"].astype(float) / 1000.0
-        lat_ms = lat_ms.clip(lower=1e-3)
-        lat_sorted = np.sort(lat_ms.values)
-        p = np.linspace(0, 100, len(lat_sorted), endpoint=False)
-        color = get_adapter_color(label)
-        plt.plot(lat_sorted, p, label=label, color=color, linewidth=2)
+
+        # Extract percentiles and latencies
+        percentiles = [p["percentile"] for p in percentiles_data]
+        latencies_ms = [p["latency_us"] / 1000.0 for p in percentiles_data]
+
+        color = get_adapter_color(adapter_name)
+        plt.plot(latencies_ms, percentiles, label=adapter_name, color=color, linewidth=2)
+
     plt.xscale("log")
     plt.xlabel("Latency (ms) [log]")
     plt.ylabel("Percentile (%)")
     plt.title(title)
     plt.legend()
-    plt.grid(True, which="both", ls=":")
+    plt.grid(True, which="both", ls=":", alpha=0.6)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()
@@ -1062,7 +1073,8 @@ def main():
                 wc = readers if is_readers else writers
                 adapter = run["summary"]["adapter"]
                 sample_rate = run.get("meta", {}).get("sample_rate", 1)
-                writer_groups[wc].append((adapter, run["_throughput_df"], sample_rate))
+                latency_file = run["path"] / "latency.json"
+                writer_groups[wc].append((adapter, run["_throughput_df"], sample_rate, latency_file))
                 adapters_set.add(adapter)
                 writer_counts_set.add(wc)
                 all_adapters.add(adapter)
@@ -1071,14 +1083,18 @@ def main():
             workload_dir.mkdir(parents=True, exist_ok=True)
 
             for wc, run_data in sorted(writer_groups.items()):
-                # TODO: Reimplement latency comparison using HDR histograms
-                # plot_comparison_latency_cdf(
-                #     run_data,
-                #     f"Latency CDF — {wc} {worker_label}(s)",
-                #     workload_dir / f"{workload_name}_comparison_{worker_suffix}{wc}_latency_cdf.png",
-                # )
+                # Plot latency comparison using JSON percentiles
+                latency_run_data = [(adapter, latency_file) for adapter, _, _, latency_file in run_data]
+                plot_comparison_latency_cdf(
+                    latency_run_data,
+                    f"Latency CDF — {wc} {worker_label}(s)",
+                    workload_dir / f"{workload_name}_comparison_{worker_suffix}{wc}_latency_cdf.png",
+                )
+
+                # Plot throughput comparison
+                throughput_run_data = [(adapter, throughput_df, sample_rate) for adapter, throughput_df, sample_rate, _ in run_data]
                 plot_comparison_throughput(
-                    run_data,
+                    throughput_run_data,
                     f"Throughput — {wc} {worker_label}(s)",
                     workload_dir / f"{workload_name}_comparison_{worker_suffix}{wc}_throughput.png",
                     workload_dir / f"{workload_name}_comparison_{worker_suffix}{wc}_throughput_data.json",
