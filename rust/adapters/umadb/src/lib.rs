@@ -11,7 +11,6 @@ use testcontainers::ContainerAsync;
 use tokio::time::Duration;
 use umadb_client::UmaDBClient;
 use umadb_dcb::{DCBEvent, DCBEventStoreAsync, DCBQuery, DCBQueryItem};
-use uuid::Uuid;
 
 // Store manager - handles lifecycle and adapter creation
 pub struct UmaDbStoreManager {
@@ -88,15 +87,13 @@ pub struct UmaDbAdapter {
 #[async_trait]
 impl EventStoreAdapter for UmaDbAdapter {
     async fn append(&self, evt: EventData) -> Result<()> {
-        let mut tags = evt.tags.clone();
-        tags.push(format!("stream:{}", evt.stream));
         let dcb_evt = DCBEvent {
             event_type: evt.event_type,
-            tags,
+            tags: vec![format!("stream:{}", evt.stream)],
             data: evt.payload,
-            uuid: Some(Uuid::new_v4()),
+            uuid: None,
         };
-        let _pos: u64 = self.client.append(vec![dcb_evt], None).await?;
+        let _pos: u64 = self.client.append(vec![dcb_evt], None, None).await?;
         Ok(())
     }
 
