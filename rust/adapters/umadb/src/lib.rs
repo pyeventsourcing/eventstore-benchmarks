@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bench_core::adapter::{
-    EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreManager, StoreManagerFactory,
+    EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreDataDir, StoreManager, StoreManagerFactory,
 };
 use bench_testcontainers::umadb::{UmaDb, UMADB_PORT};
 use futures::StreamExt;
@@ -18,7 +18,7 @@ pub struct UmaDbStoreManager {
     container: Option<ContainerAsync<UmaDb>>,
     client: Option<Arc<umadb_client::AsyncUmaDBClient>>,
     local: bool,
-    data_dir: Option<String>,
+    data_dir: StoreDataDir,
 }
 
 impl UmaDbStoreManager {
@@ -28,7 +28,7 @@ impl UmaDbStoreManager {
             container: None,
             client: None,
             local: false,
-            data_dir,
+            data_dir: StoreDataDir::new(data_dir, "umadb"),
         }
     }
 }
@@ -37,7 +37,8 @@ impl UmaDbStoreManager {
 impl StoreManager for UmaDbStoreManager {
     async fn start(&mut self) -> Result<()> {
         if !self.local {
-            let container = UmaDb::new(self.data_dir.clone()).start().await?;
+            let mount_path = self.data_dir.setup()?;
+            let container = UmaDb::new(mount_path).start().await?;
             let host_port = container.get_host_port_ipv4(UMADB_PORT).await?;
             self.uri = Some(format!("http://localhost:{}", host_port));
             self.container = Some(container);
@@ -62,6 +63,7 @@ impl StoreManager for UmaDbStoreManager {
         if let Some(container) = self.container.take() {
             container.stop().await?;
         }
+        self.data_dir.cleanup()?;
         Ok(())
     }
 

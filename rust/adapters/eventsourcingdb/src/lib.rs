@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bench_core::adapter::{
-    EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreManager, StoreManagerFactory,
+    EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreDataDir, StoreManager, StoreManagerFactory,
 };
 use bench_testcontainers::eventsourcingdb::{
     EventsourcingDb, EVENTSOURCINGDB_API_TOKEN, EVENTSOURCINGDB_PORT,
@@ -22,7 +22,7 @@ pub struct EventsourcingDbStoreManager {
     uri: Option<String>,
     options: HashMap<String, String>,
     container: Option<ContainerAsync<EventsourcingDb>>,
-    data_dir: Option<String>,
+    data_dir: StoreDataDir,
 }
 
 impl EventsourcingDbStoreManager {
@@ -31,7 +31,7 @@ impl EventsourcingDbStoreManager {
             uri: None,
             container: None,
             options: HashMap::new(),
-            data_dir,
+            data_dir: StoreDataDir::new(data_dir, "eventsourcingdb"),
         }
     }
 }
@@ -39,7 +39,8 @@ impl EventsourcingDbStoreManager {
 #[async_trait]
 impl StoreManager for EventsourcingDbStoreManager {
     async fn start(&mut self) -> Result<()> {
-        let container = EventsourcingDb::new(self.data_dir.clone()).start().await?;
+        let mount_path = self.data_dir.setup()?;
+        let container = EventsourcingDb::new(mount_path).start().await?;
         let host_port = container.get_host_port_ipv4(EVENTSOURCINGDB_PORT).await?;
         self.uri = Some(format!("http://localhost:{}/", host_port));
         self.container = Some(container);
@@ -64,6 +65,7 @@ impl StoreManager for EventsourcingDbStoreManager {
         if let Some(container) = self.container.take() {
             container.stop().await?;
         }
+        self.data_dir.cleanup()?;
         Ok(())
     }
 

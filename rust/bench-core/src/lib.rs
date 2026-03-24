@@ -6,7 +6,7 @@ pub mod runner;
 pub mod system_info;
 pub mod workloads;
 
-pub use adapter::{EventStoreAdapter, StoreManager, StoreManagerFactory};
+pub use adapter::{EventStoreAdapter, StoreDataDir, StoreManager, StoreManagerFactory};
 pub use common::{SetupConfig, StreamsConfig};
 pub use metrics::{LatencyStats, ThroughputSample, RunMetrics, Summary};
 pub use metrics::{SessionMetadata, EnvironmentInfo, RunManifest};

@@ -71,6 +71,47 @@ pub trait StoreManager: Send + Sync {
     fn create_adapter(&self) -> anyhow::Result<Arc<dyn EventStoreAdapter>>;
 }
 
+/// Helper for managing store data directories
+pub struct StoreDataDir {
+    base_dir: Option<String>,
+    store_name: String,
+    active_path: Option<std::path::PathBuf>,
+}
+
+impl StoreDataDir {
+    pub fn new(base_dir: Option<String>, store_name: &str) -> Self {
+        Self {
+            base_dir,
+            store_name: store_name.to_string(),
+            active_path: None,
+        }
+    }
+
+    pub fn setup(&mut self) -> anyhow::Result<Option<String>> {
+        if let Some(ref base) = self.base_dir {
+            let path = std::path::PathBuf::from(base).join(&self.store_name);
+            if path.exists() {
+                anyhow::bail!("Data directory already exists: {}", path.display());
+            }
+            std::fs::create_dir_all(&path)?;
+            let path_str = path.to_string_lossy().to_string();
+            self.active_path = Some(path);
+            Ok(Some(path_str))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn cleanup(&mut self) -> anyhow::Result<()> {
+        if let Some(path) = self.active_path.take() {
+            if path.exists() {
+                std::fs::remove_dir_all(&path)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Creates store manager instances
 pub trait StoreManagerFactory: Send + Sync {
     fn name(&self) -> &'static str;

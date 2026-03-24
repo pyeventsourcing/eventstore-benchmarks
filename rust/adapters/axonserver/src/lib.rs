@@ -4,7 +4,7 @@ use axonserver_client::proto::dcb::source_events_response;
 use axonserver_client::proto::dcb::{Criterion, Event, Tag, TaggedEvent, TagsAndNamesCriterion};
 use axonserver_client::AxonServerClient;
 use bench_core::adapter::{
-    EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreManager, StoreManagerFactory,
+    EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreDataDir, StoreManager, StoreManagerFactory,
 };
 use bench_testcontainers::axonserver::{AxonServer, AXONSERVER_GRPC_PORT};
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use tokio::time::Duration;
 pub struct AxonServerStoreManager {
     uri: Option<String>,
     container: Option<ContainerAsync<AxonServer>>,
-    data_dir: Option<String>,
+    data_dir: StoreDataDir,
 }
 
 impl AxonServerStoreManager {
@@ -24,7 +24,7 @@ impl AxonServerStoreManager {
         Self {
             uri: None,
             container: None,
-            data_dir,
+            data_dir: StoreDataDir::new(data_dir, "axonserver"),
         }
     }
 }
@@ -32,7 +32,8 @@ impl AxonServerStoreManager {
 #[async_trait]
 impl StoreManager for AxonServerStoreManager {
     async fn start(&mut self) -> Result<()> {
-        let container = AxonServer::new(self.data_dir.clone()).start().await?;
+        let mount_path = self.data_dir.setup()?;
+        let container = AxonServer::new(mount_path).start().await?;
         let host_port = container.get_host_port_ipv4(AXONSERVER_GRPC_PORT).await?;
         self.uri = Some(format!("http://localhost:{}", host_port));
         self.container = Some(container);
@@ -53,6 +54,7 @@ impl StoreManager for AxonServerStoreManager {
         if let Some(container) = self.container.take() {
             container.stop().await?;
         }
+        self.data_dir.cleanup()?;
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bench_core::adapter::{
-    EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreManager, StoreManagerFactory,
+    EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreDataDir, StoreManager, StoreManagerFactory,
 };
 use bench_testcontainers::kurrentdb::{KurrentDb, KURRENTDB_PORT};
 use kurrentdb::{AppendToStreamOptions, Client, ClientSettings, ReadStreamOptions, StreamPosition};
@@ -15,7 +15,7 @@ use uuid::Uuid;
 pub struct KurrentDbStoreManager {
     uri: Option<String>,
     container: Option<ContainerAsync<KurrentDb>>,
-    data_dir: Option<String>,
+    data_dir: StoreDataDir,
 }
 
 impl KurrentDbStoreManager {
@@ -23,7 +23,7 @@ impl KurrentDbStoreManager {
         Self {
             uri: None,
             container: None,
-            data_dir,
+            data_dir: StoreDataDir::new(data_dir, "kurrentdb"),
         }
     }
 }
@@ -31,7 +31,8 @@ impl KurrentDbStoreManager {
 #[async_trait]
 impl StoreManager for KurrentDbStoreManager {
     async fn start(&mut self) -> Result<()> {
-        let container = KurrentDb::new(self.data_dir.clone()).start().await?;
+        let mount_path = self.data_dir.setup()?;
+        let container = KurrentDb::new(mount_path).start().await?;
         let host_port = container.get_host_port_ipv4(KURRENTDB_PORT).await?;
         self.uri = Some(format!("esdb://localhost:{}?tls=false", host_port));
         self.container = Some(container);
@@ -61,6 +62,7 @@ impl StoreManager for KurrentDbStoreManager {
         if let Some(container) = self.container.take() {
             container.stop().await?;
         }
+        self.data_dir.cleanup()?;
         Ok(())
     }
 
