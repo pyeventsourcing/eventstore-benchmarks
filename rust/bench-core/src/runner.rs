@@ -2,6 +2,7 @@ use crate::adapter::StoreManager;
 use crate::metrics::{RunMetrics, Summary};
 use crate::workloads::{Workload, PerformanceWorkload};
 use crate::metrics::ContainerMetrics;
+use crate::container_stats::ContainerMonitor;
 use anyhow::Result;
 use std::time::{Instant};
 
@@ -22,6 +23,22 @@ pub async fn execute_run(
         startup_time_s
     );
 
+    // Initialize container monitoring if possible
+    let monitor = if let Some(id) = store.container_id() {
+        match ContainerMonitor::new(id) {
+            Ok(mut m) => {
+                m.start().await;
+                Some(m)
+            }
+            Err(e) => {
+                eprintln!("Failed to initialize container monitor: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Extract workload details and execute based on type
     let (workload_name, duration_seconds, writers, readers, overall, events_written, events_read, throughput_samples) = match workload {
         Workload::Performance(perf_workload) => {
@@ -38,7 +55,6 @@ pub async fn execute_run(
         }
     };
 
-    // Calculate actual duration and throughput from first and last samples
     let (dur_s, throughput_eps) = if throughput_samples.len() >= 2 {
         let first_sample = throughput_samples.first().unwrap();
         let last_sample = throughput_samples.last().unwrap();
@@ -51,6 +67,29 @@ pub async fn execute_run(
         (duration_seconds as f64, (total_ops as f64) / (duration_seconds as f64).max(0.001))
     };
 
+    // Collect container metrics
+    let mut container_metrics = ContainerMetrics {
+        startup_time_s,
+        ..Default::default()
+    };
+
+    if let Some(m) = monitor {
+        match m.get_image_size().await {
+            Ok(size) => container_metrics.image_size_bytes = Some(size),
+            Err(e) => eprintln!("Failed to get image size: {}", e),
+        }
+
+        match m.stop().await {
+            Ok((avg_cpu, peak_cpu, avg_mem, peak_mem)) => {
+                container_metrics.avg_cpu_percent = avg_cpu;
+                container_metrics.peak_cpu_percent = peak_cpu;
+                container_metrics.avg_memory_bytes = avg_mem;
+                container_metrics.peak_memory_bytes = peak_mem;
+            }
+            Err(e) => eprintln!("Failed to stop container monitor: {}", e),
+        }
+    }
+
     let summary = Summary {
         workload: workload_name,
         adapter: store.name().to_string(),
@@ -61,14 +100,7 @@ pub async fn execute_run(
         duration_s: dur_s,
         throughput_eps,
         latency: overall.to_stats(),
-        container: ContainerMetrics {
-            image_size_bytes: None,
-            startup_time_s,
-            avg_cpu_percent: None,
-            peak_cpu_percent: None,
-            avg_memory_bytes: None,
-            peak_memory_bytes: None,
-        },
+        container: container_metrics,
     };
 
     let metrics = RunMetrics {

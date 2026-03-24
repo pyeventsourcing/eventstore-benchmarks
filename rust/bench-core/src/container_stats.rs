@@ -1,151 +1,113 @@
 use anyhow::Result;
-use serde::Deserialize;
-use std::process::Command;
-use std::thread;
-use std::time::Duration as StdDuration;
+use bollard::container::StatsOptions;
+use bollard::Docker;
+use futures::StreamExt;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
-#[derive(Debug, Deserialize)]
-struct DockerImageInspect {
-    #[serde(rename = "Size")]
-    size: Option<u64>,
+pub struct ContainerMonitor {
+    docker: Docker,
+    container_id: String,
+    stats: Arc<Mutex<CollectedStats>>,
+    stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    monitor_task: Option<JoinHandle<()>>,
 }
 
-/// Get the container image size in bytes
-pub fn get_container_image_size(container_id: &str) -> Result<u64> {
-    // First, get the image ID from the container
-    let output = Command::new("docker")
-        .args(&["inspect", "--format", "{{.Image}}", container_id])
-        .output()?;
+#[derive(Default, Clone)]
+struct CollectedStats {
+    cpu_samples: Vec<f64>,
+    memory_samples: Vec<u64>,
+}
 
-    if !output.status.success() {
-        anyhow::bail!("docker inspect container failed");
+impl ContainerMonitor {
+    pub fn new(container_id: String) -> Result<Self> {
+        let docker = Docker::connect_with_local_defaults()?;
+        Ok(Self {
+            docker,
+            container_id,
+            stats: Arc::new(Mutex::new(CollectedStats::default())),
+            stop_tx: None,
+            monitor_task: None,
+        })
     }
 
-    let image_id = String::from_utf8(output.stdout)?.trim().to_string();
+    pub async fn start(&mut self) {
+        let docker = self.docker.clone();
+        let container_id = self.container_id.clone();
+        let stats_arc = self.stats.clone();
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+        self.stop_tx = Some(stop_tx);
 
-    // Then get the image size
-    let output = Command::new("docker")
-        .args(&["image", "inspect", &image_id])
-        .output()?;
+        let monitor_task = tokio::spawn(async move {
+            let mut stream = docker.stats(&container_id, Some(StatsOptions { stream: true, one_shot: false }));
+            let mut stop_rx = stop_rx;
 
-    if !output.status.success() {
-        anyhow::bail!("docker image inspect failed");
-    }
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => break,
+                    Some(Ok(stats)) = stream.next() => {
+                        let mut guard = stats_arc.lock().await;
 
-    let json_str = String::from_utf8(output.stdout)?;
-    let inspect: Vec<DockerImageInspect> = serde_json::from_str(&json_str)?;
+                        // Calculate CPU percentage
+                        // bollard provides raw stats, we need to calculate %
+                        // Formula: (cpu_delta / system_delta) * online_cpus * 100.0
+                        let cpu_delta = (stats.cpu_stats.cpu_usage.total_usage as f64) - (stats.precpu_stats.cpu_usage.total_usage as f64);
+                        let system_delta = (stats.cpu_stats.system_cpu_usage.unwrap_or(0) as f64) - (stats.precpu_stats.system_cpu_usage.unwrap_or(0) as f64);
+                        let online_cpus = stats.cpu_stats.online_cpus.unwrap_or(1) as f64;
 
-    if let Some(first) = inspect.first() {
-        if let Some(size) = first.size {
-            return Ok(size);
-        }
-    }
+                        if system_delta > 0.0 && cpu_delta > 0.0 {
+                            let cpu_perc = (cpu_delta / system_delta) * online_cpus * 100.0;
+                            guard.cpu_samples.push(cpu_perc);
+                        }
 
-    anyhow::bail!("Could not extract image size from docker image inspect")
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct DockerStats {
-    #[serde(rename = "CPUPerc")]
-    cpu_perc: String,
-    mem_usage: String,
-}
-
-#[derive(Debug)]
-pub struct ContainerStats {
-    pub cpu_percent: f64,
-    pub memory_bytes: u64,
-}
-
-/// Get current container stats using docker stats with JSON format
-/// Takes multiple samples to get accurate CPU measurements (Docker calculates CPU as deltas)
-pub fn get_container_stats(container_id: &str) -> Result<ContainerStats> {
-    const NUM_SAMPLES: usize = 1;
-    const SAMPLE_DELAY_MS: u64 = 150;
-
-    let mut cpu_samples = Vec::new();
-    let mut mem_samples = Vec::new();
-
-    // Take multiple samples for better accuracy
-    for i in 0..NUM_SAMPLES {
-        let output = Command::new("docker")
-            .args(&[
-                "stats",
-                "--no-stream",
-                "--format",
-                "{{json .}}",
-                container_id,
-            ])
-            .output()?;
-
-        if !output.status.success() {
-            anyhow::bail!("docker stats failed");
-        }
-
-        let json_str = String::from_utf8(output.stdout)?;
-        let stats: DockerStats = serde_json::from_str(json_str.trim())?;
-
-        // Parse CPU percentage (format: "1.23%")
-        let cpu_str = stats.cpu_perc.trim().trim_end_matches('%');
-        if let Ok(cpu) = cpu_str.parse::<f64>() {
-            cpu_samples.push(cpu);
-        }
-
-        // Parse memory (format: "123.4MiB / 7.775GiB")
-        let mem_parts: Vec<&str> = stats.mem_usage.split('/').collect();
-        if !mem_parts.is_empty() {
-            if let Ok(mem_bytes) = parse_memory_size(mem_parts[0].trim()) {
-                mem_samples.push(mem_bytes);
+                        // Memory usage
+                        let mem_usage = stats.memory_stats.usage.unwrap_or(0);
+                        guard.memory_samples.push(mem_usage);
+                    }
+                    else => break,
+                }
             }
-        }
+        });
 
-        if i < NUM_SAMPLES - 1 {
-            thread::sleep(StdDuration::from_millis(SAMPLE_DELAY_MS));
-        }
+        self.monitor_task = Some(monitor_task);
     }
 
-    // Return average CPU and latest memory
-    let cpu_percent = if !cpu_samples.is_empty() {
-        cpu_samples.iter().sum::<f64>() / cpu_samples.len() as f64
-    } else {
-        0.0
-    };
+    pub async fn stop(mut self) -> Result<(Option<f64>, Option<f64>, Option<u64>, Option<u64>)> {
+        if let Some(stop_tx) = self.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        if let Some(task) = self.monitor_task.take() {
+            let _ = task.await;
+        }
 
-    let memory_bytes = mem_samples.last().copied().unwrap_or(0);
+        let guard = self.stats.lock().await;
 
-    Ok(ContainerStats {
-        cpu_percent,
-        memory_bytes,
-    })
-}
+        let avg_cpu = if !guard.cpu_samples.is_empty() {
+            Some(guard.cpu_samples.iter().sum::<f64>() / guard.cpu_samples.len() as f64)
+        } else {
+            None
+        };
 
-/// Parse memory size string (e.g., "123.4MiB", "1.5GiB") to bytes
-fn parse_memory_size(s: &str) -> Result<u64> {
-    let s = s.trim();
+        let peak_cpu = guard.cpu_samples.iter().cloned().fold(None, |acc, x| {
+            Some(acc.map_or(x, |curr| if x > curr { x } else { curr }))
+        });
 
-    // Extract number and unit
-    let (num_str, unit) = if s.ends_with("GiB") {
-        (&s[..s.len() - 3], "GiB")
-    } else if s.ends_with("MiB") {
-        (&s[..s.len() - 3], "MiB")
-    } else if s.ends_with("KiB") {
-        (&s[..s.len() - 3], "KiB")
-    } else if s.ends_with("B") {
-        (&s[..s.len() - 1], "B")
-    } else {
-        anyhow::bail!("unknown memory unit in: {}", s);
-    };
+        let avg_mem = if !guard.memory_samples.is_empty() {
+            Some(guard.memory_samples.iter().sum::<u64>() / guard.memory_samples.len() as u64)
+        } else {
+            None
+        };
 
-    let num = num_str.parse::<f64>()?;
+        let peak_mem = guard.memory_samples.iter().max().cloned();
 
-    let bytes = match unit {
-        "GiB" => (num * 1024.0 * 1024.0 * 1024.0) as u64,
-        "MiB" => (num * 1024.0 * 1024.0) as u64,
-        "KiB" => (num * 1024.0) as u64,
-        "B" => num as u64,
-        _ => anyhow::bail!("unknown memory unit: {}", unit),
-    };
+        Ok((avg_cpu, peak_cpu, avg_mem, peak_mem))
+    }
 
-    Ok(bytes)
+    pub async fn get_image_size(&self) -> Result<u64> {
+        let inspect = self.docker.inspect_container(&self.container_id, None).await?;
+        let image_id = inspect.image.ok_or_else(|| anyhow::anyhow!("No image ID for container"))?;
+        let image_inspect = self.docker.inspect_image(&image_id).await?;
+        Ok(image_inspect.size.unwrap_or(0) as u64)
+    }
 }
