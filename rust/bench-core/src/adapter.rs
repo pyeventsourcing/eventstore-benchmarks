@@ -112,6 +112,12 @@ impl StoreDataDir {
     }
 }
 
+impl Drop for StoreDataDir {
+    fn drop(&mut self) {
+        let _ = self.cleanup();
+    }
+}
+
 /// Creates store manager instances
 pub trait StoreManagerFactory: Send + Sync {
     fn name(&self) -> &'static str;

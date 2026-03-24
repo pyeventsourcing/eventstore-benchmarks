@@ -68,6 +68,7 @@ pub async fn execute_run(
         } => res,
         _ = cancel_token.cancelled() => {
             println!("Interrupted during workload execution.");
+            store.stop().await.ok();
             anyhow::bail!("Interrupted");
         }
     };
