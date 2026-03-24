@@ -6,7 +6,7 @@ mode: "write"
 duration_seconds: 5
 
 concurrency:
-  writers: [1, 2, 4]
+  writers: [1, 4, 16]
 
 operations:
   write:
@@ -16,5 +16,4 @@ streams:
   distribution: "uniform"
   count: 100
 
-stores:
-  - "dummy"
+stores: [umadb, kurrentdb, axonserver, eventsourcingdb, dummy]
