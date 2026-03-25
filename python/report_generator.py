@@ -811,6 +811,12 @@ def generate_session_index(session_out_dir: Path, session_id: str, workload_summ
             
             fs_type = env_info.get('disk', {}).get('filesystem', 'N/A')
             disk_type = env_info.get('disk', {}).get('type', 'N/A')
+            fsync = env_info.get('disk', {}).get('fsync_latency')
+            fsync_section = ""
+            if fsync:
+                fsync_section = f"""
+          <p><b>Fsync (avg/p99):</b> {fsync.get('avg_ms', 0):.2f} / {fsync.get('p99_ms', 0):.2f} ms</p>
+"""
             
             runtime = env_info.get('container_runtime', {})
             rt_type = runtime.get('type', 'N/A')
@@ -840,6 +846,7 @@ def generate_session_index(session_out_dir: Path, session_id: str, workload_summ
           <h3>Storage</h3>
           <p><b>Disk Type:</b> {disk_type}</p>
           <p><b>FS Type:</b> {fs_type}</p>
+          {fsync_section}
         </div>
       </div>
     </div>"""

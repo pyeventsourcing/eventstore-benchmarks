@@ -170,10 +170,20 @@ pub struct MemoryInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct FsyncStats {
+    pub min_ms: f64,
+    pub max_ms: f64,
+    pub avg_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct DiskInfo {
     #[serde(rename = "type")]
     pub disk_type: String,
     pub filesystem: String,
+    pub fsync_latency: Option<FsyncStats>,
 }
 
 #[derive(Debug, Clone, Serialize)]

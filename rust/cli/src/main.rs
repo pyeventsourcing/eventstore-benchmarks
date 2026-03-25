@@ -7,7 +7,7 @@ use chrono::Utc;
 use clap::{Parser, Subcommand};
 use rand::Rng;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
@@ -140,7 +140,8 @@ async fn run_benchmark(config_path: &PathBuf, seed: Option<u64>, data_dir: Optio
     println!("Session ID: {}", session_id);
 
     // Collect environment info
-    let environment_info = collect_environment_info().await?;
+    let data_dir_path = data_dir.as_ref().map(Path::new);
+    let environment_info = collect_environment_info(data_dir_path).await?;
 
     // Get benchmark version (git commit)
     let benchmark_version = get_git_commit_hash().unwrap_or_else(|_| "unknown".to_string());

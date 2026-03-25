@@ -1,6 +1,12 @@
-use crate::metrics::{ContainerRuntimeInfo, CpuInfo, DiskInfo, EnvironmentInfo, MemoryInfo, OsInfo};
+use crate::metrics::{
+    ContainerRuntimeInfo, CpuInfo, DiskInfo, EnvironmentInfo, FsyncStats, MemoryInfo, OsInfo,
+};
 use anyhow::Result;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::Path;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 /// Get the current git commit hash
 pub fn get_git_commit_hash() -> Result<String> {
@@ -19,12 +25,12 @@ pub fn get_git_commit_hash() -> Result<String> {
 }
 
 /// Collect system environment information
-pub async fn collect_environment_info() -> Result<EnvironmentInfo> {
+pub async fn collect_environment_info(path: Option<&Path>) -> Result<EnvironmentInfo> {
     Ok(EnvironmentInfo {
         os: collect_os_info()?,
         cpu: collect_cpu_info()?,
         memory: collect_memory_info()?,
-        disk: collect_disk_info()?,
+        disk: collect_disk_info(path)?,
         container_runtime: collect_container_runtime_info().await?,
     })
 }
@@ -217,11 +223,14 @@ fn collect_memory_info() -> Result<MemoryInfo> {
     }
 }
 
-fn collect_disk_info() -> Result<DiskInfo> {
+fn collect_disk_info(path: Option<&Path>) -> Result<DiskInfo> {
+    let test_path = path.unwrap_or(Path::new("."));
+    let fsync_latency = measure_fsync_latency(test_path).ok();
+
     #[cfg(target_os = "macos")]
     {
         let output = Command::new("df")
-            .args(["-T", "."])
+            .args(["-T", &test_path.to_string_lossy()])
             .output()?;
         let df_output = String::from_utf8_lossy(&output.stdout);
         let filesystem = df_output
@@ -234,13 +243,14 @@ fn collect_disk_info() -> Result<DiskInfo> {
         Ok(DiskInfo {
             disk_type: "NVMe".to_string(), // Hardcoded for now, could parse system_profiler
             filesystem,
+            fsync_latency,
         })
     }
 
     #[cfg(target_os = "linux")]
     {
         let output = Command::new("df")
-            .args(["-T", "."])
+            .args(["-T", &test_path.to_string_lossy()])
             .output()?;
         let df_output = String::from_utf8_lossy(&output.stdout);
         let filesystem = df_output
@@ -253,6 +263,7 @@ fn collect_disk_info() -> Result<DiskInfo> {
         Ok(DiskInfo {
             disk_type: "SSD".to_string(), // Could be improved with more detection
             filesystem,
+            fsync_latency,
         })
     }
 
@@ -261,8 +272,55 @@ fn collect_disk_info() -> Result<DiskInfo> {
         Ok(DiskInfo {
             disk_type: "unknown".to_string(),
             filesystem: "unknown".to_string(),
+            fsync_latency,
         })
     }
+}
+
+/// Measure fsync latency by performing a few small writes and fsyncs
+fn measure_fsync_latency(path: &Path) -> Result<FsyncStats> {
+    let test_file = path.join(".fsync_test");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&test_file)?;
+
+    let iterations = 50;
+    let mut latencies = Vec::with_capacity(iterations);
+    let data = [0u8; 4096];
+
+    for _ in 0..iterations {
+        file.write_all(&data)?;
+        let start = Instant::now();
+        file.sync_all()?;
+        latencies.push(start.elapsed());
+    }
+
+    // Clean up
+    drop(file);
+    let _ = std::fs::remove_file(test_file);
+
+    if latencies.is_empty() {
+        return Err(anyhow::anyhow!("No latencies recorded"));
+    }
+
+    latencies.sort();
+
+    let min = latencies.first().unwrap().as_secs_f64() * 1000.0;
+    let max = latencies.last().unwrap().as_secs_f64() * 1000.0;
+    let sum: Duration = latencies.iter().sum();
+    let avg = (sum.as_secs_f64() * 1000.0) / iterations as f64;
+    let p95 = latencies[(iterations * 95 / 100).min(iterations - 1)].as_secs_f64() * 1000.0;
+    let p99 = latencies[(iterations * 99 / 100).min(iterations - 1)].as_secs_f64() * 1000.0;
+
+    Ok(FsyncStats {
+        min_ms: min,
+        max_ms: max,
+        avg_ms: avg,
+        p95_ms: p95,
+        p99_ms: p99,
+    })
 }
 
 async fn collect_container_runtime_info() -> Result<ContainerRuntimeInfo> {
