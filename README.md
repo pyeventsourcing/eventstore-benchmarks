@@ -3,24 +3,44 @@
 
 # Event Store Benchmark Suite
 
-A rigorous, reproducible, open benchmark framework for evaluating event sourcing databases and append-only log systems.
+A rigorous, reproducible, open-source benchmark framework for evaluating event sourcing databases.
 
 This project exists to define a **credible performance standard** for event stores — one that measures real-world behavior under realistic workloads, not synthetic best-case scenarios.
 
-The benchmark is built with:
+This project is implemented with Rust and Python:
 
-* **Rust** — high-precision workload execution and measurement
-* **Python** — analysis, visualization, and reporting
+* **es-bench** — workload execution implemented in Rust 
+* **report_generator.py** — analysis and visualization in Python
 
 # Getting Started
 
-1. Install Rust (stable toolchain)
-2. Install Python 3.11+
-3. Clone the repository
+1. Clone the repository
+2. Install Rust (stable toolchain)
+3. Install Python 3.11+
 4. Run sample workloads
 5. Generate example reports
 6. Validate results on your hardware
 
+## Clone the Repository
+
+There are many different ways to clone the repository on GitHub.
+
+```bash
+git clone https://github.com/pyeventsourcing/event-store-benchmark.git
+```
+
+## Install Rust
+
+To build the `es-bench` executable, you will need `cargo` and other build tools such as `protoc`.
+
+# Quick Start with Makefile
+
+For convenience, a `Makefile` is provided to simplify common tasks.
+
+- **Build the CLI**: `make build`
+- **Setup Python Environment**: `make venv`
+- **Run a benchmark**: `make run smoke-test` (runs the `configs/smoke-test.yaml` workload)
+- **Generate reports**: `make report`
 
 # CLI Commands
 
