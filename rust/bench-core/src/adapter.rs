@@ -41,14 +41,6 @@ pub struct ReadEvent {
 #[async_trait]
 pub trait EventStoreAdapter: Send + Sync {
     async fn append(&self, evt: EventData) -> anyhow::Result<()>;
-
-    async fn batch_append(&self, events: Vec<EventData>) -> anyhow::Result<()> {
-        for e in events {
-            self.append(e).await?;
-        }
-        Ok(())
-    }
-
     async fn read(&self, req: ReadRequest) -> anyhow::Result<Vec<ReadEvent>>;
 }
 

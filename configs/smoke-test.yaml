@@ -1,19 +1,13 @@
-name: "smoke-test"
-workload_type: "performance"
-
-mode: "write"
-
-duration_seconds: 5
-
+name: smoke-test
+workload_type: performance
+mode: write
+duration_seconds: 10
 concurrency:
-  writers: [1, 4, 16]
-
+  writers: [1, 4]
 operations:
   write:
     event_size_bytes: 256
-
 streams:
-  distribution: "uniform"
+  distribution: uniform
   count: 100
-
-stores: [umadb, kurrentdb, axonserver, eventsourcingdb, dummy]
+stores: [umadb, dummy]

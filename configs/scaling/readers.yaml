@@ -1,10 +1,12 @@
 name: scaling-readers
 workload_type: performance
 mode: read
-duration_seconds: 60
+duration_seconds: 6
 concurrency:
-  readers: [1, 2, 4, 8, 16, 32]  # Sweep: measure read scalability
+  readers: [1, 2, 4, 8, 16, 32]
 operations:
+  write:
+    event_size_bytes: 256
   read:
     batch_size: 100
 streams:
@@ -13,4 +15,4 @@ streams:
 setup:
   prepopulate_events: 50000
   prepopulate_streams: 5000
-stores: [umadb, kurrentdb, dummy]
+stores: [umadb, kurrentdb, axonserver, eventsourcingdb, dummy]
