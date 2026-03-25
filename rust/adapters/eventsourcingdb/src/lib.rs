@@ -61,6 +61,11 @@ impl StoreManager for EventsourcingDbStoreManager {
         anyhow::bail!("EventsourcingDB container did not become ready within 60s")
     }
 
+    async fn pull(&mut self) -> Result<()> {
+        let _ = EventsourcingDb::new(None).pull_image().await?;
+        Ok(())
+    }
+
     async fn stop(&mut self) -> Result<()> {
         if let Some(container) = self.container.take() {
             container.stop().await?;

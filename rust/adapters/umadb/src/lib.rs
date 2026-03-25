@@ -59,6 +59,13 @@ impl StoreManager for UmaDbStoreManager {
         anyhow::bail!("UmaDB container did not become ready within 60s")
     }
 
+    async fn pull(&mut self) -> Result<()> {
+        if !self.local {
+            let _ = UmaDb::new(None).pull_image().await?;
+        }
+        Ok(())
+    }
+
     async fn stop(&mut self) -> Result<()> {
         if let Some(container) = self.container.take() {
             container.stop().await?;

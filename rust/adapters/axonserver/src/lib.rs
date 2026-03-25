@@ -50,6 +50,11 @@ impl StoreManager for AxonServerStoreManager {
         anyhow::bail!("Axon Server container did not become ready within 60s")
     }
 
+    async fn pull(&mut self) -> Result<()> {
+        let _ = AxonServer::new(None).pull_image().await?;
+        Ok(())
+    }
+
     async fn stop(&mut self) -> Result<()> {
         if let Some(container) = self.container.take() {
             container.stop().await?;

@@ -31,6 +31,9 @@ impl StoreManager for DummyStoreManager {
     async fn start(&mut self) -> Result<()> {
         Ok(())
     }
+    async fn pull(&mut self) -> Result<()> {
+        Ok(())
+    }
     async fn stop(&mut self) -> Result<()> {
         Ok(())
     }

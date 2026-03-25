@@ -13,6 +13,15 @@ pub async fn execute_run(
     cancel_token: CancellationToken,
 ) -> Result<RunMetrics> {
     // Start store container
+    println!("Pulling {} image...", store.name());
+    tokio::select! {
+        res = store.pull() => res?,
+        _ = cancel_token.cancelled() => {
+            println!("Interrupted while pulling image.");
+            anyhow::bail!("Interrupted");
+        }
+    }
+
     println!("Starting {} container...", store.name());
     let setup_start = Instant::now();
 

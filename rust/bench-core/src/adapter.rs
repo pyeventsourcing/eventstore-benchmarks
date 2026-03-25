@@ -49,6 +49,9 @@ pub trait StoreManager: Send + Sync {
     /// Start the container and return success status
     async fn start(&mut self) -> anyhow::Result<()>;
 
+    /// Pull the container image (if applicable)
+    async fn pull(&mut self) -> anyhow::Result<()>;
+
     /// Stop and cleanup the container
     async fn stop(&mut self) -> anyhow::Result<()>;
 
