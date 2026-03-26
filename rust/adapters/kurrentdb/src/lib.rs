@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use bench_core::adapter::{
     EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreDataDir, StoreManager, StoreManagerFactory,
 };
+use bench_core::wait_for_ready;
 use bench_testcontainers::kurrentdb::{KurrentDb, KURRENTDB_PORT};
 use kurrentdb::{AppendToStreamOptions, Client, ClientSettings, ReadStreamOptions, StreamPosition};
 use std::sync::Arc;
@@ -38,24 +39,19 @@ impl StoreManager for KurrentDbStoreManager {
         self.container = Some(container);
 
         // Wait for the container to be ready
-        for _ in 0..60 {
-            if let Ok(settings) = self.uri.clone().unwrap().parse::<ClientSettings>() {
-                if let Ok(client) = Client::new(settings) {
-                    let event =
-                        kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
-                    let options = AppendToStreamOptions::default();
-                    if client
-                        .append_to_stream("_ping", &options, event)
-                        .await
-                        .is_ok()
-                    {
-                        return Ok(());
-                    }
-                }
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-        anyhow::bail!("KurrentDB container did not become ready within 60s")
+        let uri = self.uri.clone().unwrap();
+        wait_for_ready("KurrentDB", || async {
+            let settings = uri.parse::<ClientSettings>()?;
+            let client = Client::new(settings).map_err(|e| anyhow::anyhow!(e))?;
+            let event = kurrentdb::EventData::binary("ping", vec![].into()).id(Uuid::new_v4());
+            let options = AppendToStreamOptions::default();
+            client
+                .append_to_stream("_ping", &options, event)
+                .await?;
+            Ok(())
+        }, Duration::from_secs(60)).await?;
+
+        Ok(())
     }
 
     async fn pull(&mut self) -> Result<()> {

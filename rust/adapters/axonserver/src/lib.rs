@@ -6,6 +6,7 @@ use axonserver_client::AxonServerClient;
 use bench_core::adapter::{
     EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreDataDir, StoreManager, StoreManagerFactory,
 };
+use bench_core::wait_for_ready;
 use bench_testcontainers::axonserver::{AxonServer, AXONSERVER_GRPC_PORT};
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
@@ -39,15 +40,14 @@ impl StoreManager for AxonServerStoreManager {
         self.container = Some(container);
 
         // Wait for the container to be ready
-        for _ in 0..60 {
-            if let Ok(mut client) = AxonServerClient::connect(self.uri.clone().unwrap()).await {
-                if client.get_head().await.is_ok() {
-                    return Ok(());
-                }
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-        anyhow::bail!("Axon Server container did not become ready within 60s")
+        let uri = self.uri.clone().unwrap();
+        wait_for_ready("Axon Server", || async {
+            let mut client = AxonServerClient::connect(uri.clone()).await?;
+            client.get_head().await?;
+            Ok(())
+        }, Duration::from_secs(60)).await?;
+
+        Ok(())
     }
 
     async fn pull(&mut self) -> Result<()> {

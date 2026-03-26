@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use bench_core::adapter::{
     EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreDataDir, StoreManager, StoreManagerFactory,
 };
+use bench_core::wait_for_ready;
 use bench_testcontainers::eventsourcingdb::{
     EventsourcingDb, EVENTSOURCINGDB_API_TOKEN, EVENTSOURCINGDB_PORT,
 };
@@ -49,16 +50,13 @@ impl StoreManager for EventsourcingDbStoreManager {
         self.options
             .insert("api_token".to_string(), EVENTSOURCINGDB_API_TOKEN.to_string());
 
-        // Wait for container to be ready
-        for _ in 0..60 {
-            let url: Url = self.uri.clone().unwrap().parse()?;
-            let client = Client::new(url, EVENTSOURCINGDB_API_TOKEN);
-            if client.ping().await.is_ok() {
-                return Ok(());
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-        anyhow::bail!("EventsourcingDB container did not become ready within 60s")
+        let url: Url = self.uri.clone().unwrap().parse()?;
+        wait_for_ready("EventsourcingDB", || async {
+            let client = Client::new(url.clone(), EVENTSOURCINGDB_API_TOKEN);
+            client.ping().await.map_err(|e| anyhow::anyhow!(e))
+        }, Duration::from_secs(60)).await?;
+
+        Ok(())
     }
 
     async fn pull(&mut self) -> Result<()> {

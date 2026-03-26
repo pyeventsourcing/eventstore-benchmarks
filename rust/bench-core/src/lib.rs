@@ -2,11 +2,13 @@ pub mod adapter;
 pub mod common;
 pub mod container_stats;
 pub mod metrics;
+pub mod retry;
 pub mod runner;
 pub mod system_info;
 pub mod workloads;
 
 pub use adapter::{EventStoreAdapter, StoreDataDir, StoreManager, StoreManagerFactory};
+pub use retry::wait_for_ready;
 pub use common::{is_image_pulled, mark_image_pulled, SetupConfig};
 pub use metrics::{LatencyStats, ThroughputSample, RunMetrics, Summary};
 pub use metrics::{SessionMetadata, EnvironmentInfo, RunManifest};

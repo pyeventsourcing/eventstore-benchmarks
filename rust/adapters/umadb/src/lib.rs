@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use bench_core::adapter::{
     EventData, EventStoreAdapter, ReadEvent, ReadRequest, StoreDataDir, StoreManager, StoreManagerFactory,
 };
+use bench_core::wait_for_ready;
 use bench_testcontainers::umadb::{UmaDb, UMADB_PORT};
 use futures::StreamExt;
 use std::sync::Arc;
@@ -47,16 +48,14 @@ impl StoreManager for UmaDbStoreManager {
         }
 
         // Wait for container to be ready and create shared client
-        for _ in 0..60 {
-            if let Ok(client) = UmaDBClient::new(self.uri.clone().unwrap()).connect_async().await {
-                if client.head().await.is_ok() {
-                    self.client = Some(Arc::new(client));
-                    return Ok(());
-                }
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-        anyhow::bail!("UmaDB container did not become ready within 60s")
+        let uri = self.uri.clone().unwrap();
+        self.client = Some(Arc::new(wait_for_ready("UmaDB", || async {
+            let client = UmaDBClient::new(uri.clone()).connect_async().await?;
+            client.head().await?;
+            Ok(client)
+        }, Duration::from_secs(60)).await?));
+
+        Ok(())
     }
 
     async fn pull(&mut self) -> Result<()> {
