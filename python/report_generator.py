@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from matplotlib.ticker import LogLocator, NullFormatter, ScalarFormatter
+from matplotlib.ticker import LogLocator, NullFormatter, ScalarFormatter, FormatStrFormatter
 from scipy.ndimage import gaussian_filter1d
 
 try:
@@ -134,37 +134,15 @@ def plot_latency_cdf_from_json(latency_file: Path, out_path: Path):
     plt.xscale("log")
     plt.xlabel("Latency (ms) [log]")
     plt.ylabel("Percentile (%)")
-    formatter = plt.ScalarFormatter()
-    formatter.set_scientific(False)
+    # Use FormatStrFormatter for decimals on latency axis
+    formatter = plt.FormatStrFormatter('%.1f')
     plt.gca().xaxis.set_major_formatter(formatter)
     plt.gca().xaxis.set_minor_formatter(plt.NullFormatter())
-    plt.ticklabel_format(style='plain', axis='y')
-    plt.title("Latency CDF")
     plt.grid(True, which="both", ls=":", alpha=0.6)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()
     return True
-
-
-def plot_latency_cdf(samples: pd.DataFrame, out_path: Path):
-    """Fallback: Plot latency CDF from samples (legacy method)."""
-    if samples.empty or "ok" not in samples.columns:
-        return
-    lat_ms = samples.loc[samples["ok"], "latency_us"].astype(float) / 1000.0
-    lat_ms = lat_ms.clip(lower=1e-3)
-    lat_sorted = np.sort(lat_ms.values)
-    p = np.linspace(0, 100, len(lat_sorted), endpoint=False)
-    plt.figure(figsize=(6, 4))
-    plt.plot(lat_sorted, p, label="append latency CDF")
-    plt.xscale("log")
-    plt.xlabel("Latency (ms) [log]")
-    plt.ylabel("Percentile (%)")
-    plt.title("Latency CDF")
-    plt.grid(True, which="both", ls=":")
-    plt.tight_layout()
-    plt.savefig(out_path)
-    plt.close()
 
 
 def compute_throughput_timeseries(throughput_samples: pd.DataFrame, bin_size_ms: int = 500, sample_rate: int = 1):
@@ -272,8 +250,8 @@ def plot_comparison_latency_cdf(run_data, title, out_path: Path):
     plt.xscale("log")
     plt.xlabel("Latency (ms) [log]")
     plt.ylabel("Percentile (%)")
-    formatter = plt.ScalarFormatter()
-    formatter.set_scientific(False)
+    # Use FormatStrFormatter for decimals on latency axis
+    formatter = plt.FormatStrFormatter('%.1f')
     plt.gca().xaxis.set_major_formatter(formatter)
     plt.gca().xaxis.set_minor_formatter(plt.NullFormatter())
     plt.ticklabel_format(style='plain', axis='y')
@@ -420,10 +398,15 @@ def plot_p50_scaling(runs, out_path: Path):
     plt.yscale("log")
     plt.xlabel(f"{xlabel} [log]")
     plt.ylabel("p50 Latency (ms) [log]")
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    plt.gca().xaxis.set_major_formatter(formatter)
+    
+    # Use FormatStrFormatter for decimals on latency axis
+    formatter = FormatStrFormatter('%.1f')
     plt.gca().yaxis.set_major_formatter(formatter)
+    
+    # Format x-axis (Writers/Readers count) as integers
+    x_formatter = ScalarFormatter()
+    x_formatter.set_scientific(False)
+    plt.gca().xaxis.set_major_formatter(x_formatter)
     plt.gca().xaxis.set_minor_formatter(NullFormatter())
     
     # Ensure Y-axis has enough ticks/labels even for small ranges on log scale
@@ -471,10 +454,15 @@ def plot_p99_scaling(runs, out_path: Path):
     plt.yscale("log")
     plt.xlabel(f"{xlabel} [log]")
     plt.ylabel("p99 Latency (ms) [log]")
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    plt.gca().xaxis.set_major_formatter(formatter)
+    
+    # Use FormatStrFormatter for decimals on latency axis
+    formatter = FormatStrFormatter('%.1f')
     plt.gca().yaxis.set_major_formatter(formatter)
+    
+    # Format x-axis (Writers/Readers count) as integers
+    x_formatter = ScalarFormatter()
+    x_formatter.set_scientific(False)
+    plt.gca().xaxis.set_major_formatter(x_formatter)
     plt.gca().xaxis.set_minor_formatter(NullFormatter())
     
     # Ensure Y-axis has enough ticks/labels even for small ranges on log scale

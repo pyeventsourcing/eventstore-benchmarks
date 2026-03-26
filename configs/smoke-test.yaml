@@ -1,10 +1,10 @@
 name: smoke-test
 workload_type: performance
 mode: write
-duration_seconds: 10
+duration_seconds: 5
 concurrency:
-  writers: [1, 4]
+  writers: [1, 2, 4]
 operations:
   write:
     event_size_bytes: 256
-stores: [umadb, dummy]
+stores: [umadb, eventsourcingdb, dummy]

@@ -375,14 +375,17 @@ impl PerformanceWorkload {
         tokio::time::sleep(Duration::from_secs(1)).await;
         let sample_counters = worker_counters.clone();
         let duration_seconds = self.config.duration_seconds;
+        let samples_per_second = 2;
+        let num_intervals = duration_seconds * samples_per_second; 
         let has_stopped_throughput = has_stopped.clone();
         let cancel_token_throughput = cancel_token.clone();
         let throughput_handle = tokio::spawn(async move {
             // Pre-allocate vector for N+1 samples
-            let mut samples = Vec::with_capacity((duration_seconds + 1) as usize);
+            let mut samples = Vec::with_capacity((num_intervals + 1) as usize);
+            let sampling_started = Instant::now();
 
-            // Take samples at 1-second intervals (N+1 total for N seconds)
-            for i in 0..=duration_seconds {
+            // Take samples at fixed intervals (N+1 total for N seconds)
+            for i in 0..=num_intervals {
                 if cancel_token_throughput.is_cancelled() {
                     break;
                 }
@@ -391,14 +394,19 @@ impl PerformanceWorkload {
                     .sum();
 
                 samples.push(ThroughputSample {
-                    elapsed_s: i as f64,
+                    elapsed_s: sampling_started.elapsed().as_secs_f64(),
                     count: total_count,
                 });
 
                 // Sleep until next second (except after last sample)
-                if i < duration_seconds {
+                if i < num_intervals {
+                    let sleep_duration = {
+                        let target_time = Duration::from_secs_f64((i + 1) as f64 / samples_per_second as f64);
+                        let elapsed = sampling_started.elapsed();
+                        target_time.saturating_sub(elapsed)
+                    };
                     tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                        _ = tokio::time::sleep(sleep_duration) => {}
                         _ = cancel_token_throughput.cancelled() => { break; }
                     }
                 } else {
@@ -503,14 +511,17 @@ impl PerformanceWorkload {
         tokio::time::sleep(Duration::from_secs(1)).await;
         let sample_counters = worker_counters.clone();
         let duration_seconds = self.config.duration_seconds;
+        let samples_per_second = 2;
+        let num_intervals = duration_seconds * samples_per_second;
         let has_stopped_throughput = has_stopped.clone();
         let cancel_token_throughput = cancel_token.clone();
         let throughput_handle = tokio::spawn(async move {
             // Pre-allocate vector for N+1 samples
-            let mut samples = Vec::with_capacity((duration_seconds + 1) as usize);
+            let mut samples = Vec::with_capacity((num_intervals + 1) as usize);
+            let sampling_started = Instant::now();
 
-            // Take samples at 1-second intervals (N+1 total for N seconds)
-            for i in 0..=duration_seconds {
+            // Take samples at fixed intervals (N+1 total for N seconds)
+            for i in 0..=num_intervals {
                 if cancel_token_throughput.is_cancelled() {
                     break;
                 }
@@ -519,14 +530,19 @@ impl PerformanceWorkload {
                     .sum();
 
                 samples.push(ThroughputSample {
-                    elapsed_s: i as f64,
+                    elapsed_s: sampling_started.elapsed().as_secs_f64(),
                     count: total_count,
                 });
 
-                // Sleep until next second (except after last sample)
-                if i < duration_seconds {
+                // Sleep until next interval (except after last sample)
+                if i < num_intervals {
+                    let sleep_duration = {
+                        let target_time = Duration::from_secs_f64((i + 1) as f64 / samples_per_second as f64);
+                        let elapsed = sampling_started.elapsed();
+                        target_time.saturating_sub(elapsed)
+                    };
                     tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                        _ = tokio::time::sleep(sleep_duration) => {}
                         _ = cancel_token_throughput.cancelled() => { break; }
                     }
                 } else {
@@ -668,14 +684,17 @@ impl PerformanceWorkload {
         tokio::time::sleep(Duration::from_secs(1)).await;
         let sample_counters = worker_counters.clone();
         let duration_seconds = self.config.duration_seconds;
+        let samples_per_second = 2;
+        let num_intervals = duration_seconds * samples_per_second;
         let has_stopped_throughput = has_stopped.clone();
         let cancel_token_throughput = cancel_token.clone();
         let throughput_handle = tokio::spawn(async move {
             // Pre-allocate vector for N+1 samples
-            let mut samples = Vec::with_capacity((duration_seconds + 1) as usize);
+            let mut samples = Vec::with_capacity((num_intervals + 1) as usize);
+            let sampling_started = Instant::now();
 
-            // Take samples at 1-second intervals (N+1 total for N seconds)
-            for i in 0..=duration_seconds {
+            // Take samples at fixed intervals (N+1 total for N seconds)
+            for i in 0..=num_intervals {
                 if cancel_token_throughput.is_cancelled() {
                     break;
                 }
@@ -684,14 +703,19 @@ impl PerformanceWorkload {
                     .sum();
 
                 samples.push(ThroughputSample {
-                    elapsed_s: i as f64,
+                    elapsed_s: sampling_started.elapsed().as_secs_f64(),
                     count: total_count,
                 });
 
-                // Sleep until next second (except after last sample)
-                if i < duration_seconds {
+                // Sleep until next interval (except after last sample)
+                if i < num_intervals {
+                    let sleep_duration = {
+                        let target_time = Duration::from_secs_f64((i + 1) as f64 / samples_per_second as f64);
+                        let elapsed = sampling_started.elapsed();
+                        target_time.saturating_sub(elapsed)
+                    };
                     tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                        _ = tokio::time::sleep(sleep_duration) => {}
                         _ = cancel_token_throughput.cancelled() => { break; }
                     }
                 } else {
